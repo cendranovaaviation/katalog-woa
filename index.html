@@ -37,7 +37,7 @@
         const { useState, useEffect, useMemo, useRef } = React;
 
         // Initialize Firebase services outside component (Pola Wajib)
-        const firebaseConfig = JSON.parse(window.__firebase_config || '{"apiKey": "", "authDomain": "", "projectId": "", "storageBucket": "", "messagingSenderId": "", "appId": ""}');
+        const firebaseConfig = JSON.parse(window.__firebase_config || '{"apiKey": "AIzaSyAwzTQJpzU3qPXaYnbHBG-JmZtAjMERKJs", "authDomain": "woa-fleet-hub.firebaseapp.com", "projectId": "woa-fleet-hub", "storageBucket": "woa-fleet-hub.firebasestorage.app", "messagingSenderId": "174974455884", "appId": "1:174974455884:web:155bd58e8cde28c22b64e9"}');
         const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'woa-fleet-hub-v1';
         
         const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc } = window.FirebaseBridge;
