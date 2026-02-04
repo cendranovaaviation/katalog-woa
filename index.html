@@ -3,31 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WOA Fleet Hub - Katalog Armada & Koneksi</title>
-    <!-- Chosen Palette: Aviation Aero - Background: Slate-50, Primary: Sky-600, Accents: Indigo-600, Success: Emerald-500 -->
+    <title>CendraNova Aviation - Fleet Management</title>
     
+    <!-- Library Loaders -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
-    <!-- Firebase SDK -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Firebase SDK Modules -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
-        // Global expose for Babel
+        // Global bridge untuk akses dari script Babel
         window.FirebaseBridge = { initializeApp, getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged };
     </script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
-        .chart-container { position: relative; width: 100%; max-width: 500px; margin: auto; height: 300px; }
-        .animate-fade-up { animation: fadeUp 0.5s ease-out forwards; }
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background-color: #f8fafc; 
+            -webkit-tap-highlight-color: transparent;
+        }
+        .chart-container { 
+            position: relative; 
+            width: 100%; 
+            max-width: 450px; 
+            margin: auto; 
+            height: 300px; 
+        }
+        .animate-fade { 
+            animation: fadeIn 0.4s ease-out forwards; 
+        }
+        @keyframes fadeIn { 
+            from { opacity: 0; transform: translateY(10px); } 
+            to { opacity: 1; transform: translateY(0); } 
+        }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1); }
+        
+        .shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
     </style>
 </head>
 <body>
@@ -36,40 +69,86 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // Initialize Firebase services outside component (Pola Wajib)
-        const firebaseConfig = JSON.parse(window.__firebase_config || '{"apiKey": "AIzaSyAwzTQJpzU3qPXaYnbHBG-JmZtAjMERKJs", "authDomain": "woa-fleet-hub.firebaseapp.com", "projectId": "woa-fleet-hub", "storageBucket": "woa-fleet-hub.firebasestorage.app", "messagingSenderId": "174974455884", "appId": "1:174974455884:web:155bd58e8cde28c22b64e9"}');
-        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'woa-fleet-hub-v1';
+        // Mendeteksi Konfigurasi dari Environment (PENTING untuk Fix API Key Error)
+        const firebaseConfig = typeof window.__firebase_config !== 'undefined' 
+            ? JSON.parse(window.__firebase_config) 
+            : {
+                apiKey: "AIzaSyAwzTQjpzU3qPXaYnbHBG-JmZtAjMERKJs",
+                authDomain: "woa-fleet-hub.firebaseapp.com",
+                projectId: "woa-fleet-hub",
+                storageBucket: "woa-fleet-hub.firebasestorage.app",
+                messagingSenderId: "174974455884",
+                appId: "1:174974455884:web:155bd58e28c22b64e9",
+                measurementId: "G-KDN4CJ98E"
+            };
         
+        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : "cendranova-woa-hub";
+        const ADMIN_CODE = "123456"; 
+        const HUB_LIST = ['NGO', 'MCT', 'HKG', 'LHR'];
+
         const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc } = window.FirebaseBridge;
+        
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // Icons placeholder (Lucide)
+        // Komponen Ikon yang stabil
         const Icon = ({ name, size = 20, className = "" }) => {
-            useEffect(() => {
-                if (window.lucide) {
-                    window.lucide.createIcons();
-                }
+            useEffect(() => { 
+                if (window.lucide) window.lucide.createIcons(); 
             }, [name]);
-            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
+            return (
+                <span key={name} className="inline-flex items-center justify-center pointer-events-none">
+                    <i data-lucide={name} style={{ width: `${size}px`, height: `${size}px` }} className={className}></i>
+                </span>
+            );
         };
 
         function App() {
             const [user, setUser] = useState(null);
             const [fleet, setFleet] = useState([]);
             const [requests, setRequests] = useState([]);
-            const [activeTab, setActiveTab] = useState('dashboard');
-            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [activeTab, setActiveTab] = useState('katalog'); 
+            const [isCEO, setIsCEO] = useState(false); 
             const [loading, setLoading] = useState(true);
 
-            // Form State
-            const [formData, setFormData] = useState({
-                reg: '', type: '', manufacturer: 'Boeing', cat: 'M',
-                status: 'Parkir', range: 5000, seats: 150, livery: 'Standard'
-            });
+            // Modal States
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+            const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+            const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+            
+            // Selection States
+            const [planeToDelete, setPlaneToDelete] = useState(null);
+            const [planeToRequest, setPlaneToRequest] = useState(null);
 
-            // 1. Authentication (RULE 3 - FIRST and AWAIT)
+            // UI Feedback
+            const [toast, setToast] = useState({ message: "", visible: false });
+            const [loginError, setLoginError] = useState("");
+            const [attempts, setAttempts] = useState(0);
+            const [cooldownTime, setCooldownTime] = useState(0);
+            const [isShaking, setIsShaking] = useState(false);
+
+            // Filter States
+            const [searchQuery, setSearchQuery] = useState('');
+            const [filterSize, setFilterSize] = useState('All');
+            const [filterFleetType, setFilterFleetType] = useState('All');
+
+            const showToast = (message) => {
+                setToast({ message, visible: true });
+                setTimeout(() => setToast({ message: "", visible: false }), 4000);
+            };
+
+            // Cooldown logic
+            useEffect(() => {
+                let timer;
+                if (cooldownTime > 0) {
+                    timer = setInterval(() => setCooldownTime(prev => prev - 1), 1000);
+                }
+                return () => clearInterval(timer);
+            }, [cooldownTime]);
+
+            // Authentication (Follow Rule 3)
             useEffect(() => {
                 const initAuth = async () => {
                     try {
@@ -78,321 +157,463 @@
                         } else {
                             await signInAnonymously(auth);
                         }
-                    } catch (error) {
-                        console.error("Authentication error:", error);
-                    }
+                    } catch (error) { console.error("Auth error:", error); }
                 };
                 initAuth();
-                const unsubscribe = onAuthStateChanged(auth, (u) => {
-                    setUser(u);
-                });
+                const unsubscribe = onAuthStateChanged(auth, setUser);
                 return () => unsubscribe();
             }, []);
 
-            // 2. Data Fetching (Separate useEffect with [user] dependency)
+            // Data Fetching (Follow Rule 1 & 2)
             useEffect(() => {
                 if (!user) return;
-
-                // Sync Fleet (RULE 1 - Strict Path)
                 const fleetCol = collection(db, 'artifacts', appId, 'public', 'data', 'fleet');
-                const unsubFleet = onSnapshot(fleetCol, 
-                    (snap) => {
-                        setFleet(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                        setLoading(false);
-                    },
-                    (error) => console.error("Fleet fetch error:", error)
-                );
+                const unsubFleet = onSnapshot(fleetCol, (snap) => {
+                    setFleet(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                    setLoading(false);
+                }, (err) => {
+                    console.error("Firestore error:", err);
+                    setLoading(false);
+                });
 
-                // Sync Requests (RULE 1 - Strict Path)
                 const reqCol = collection(db, 'artifacts', appId, 'public', 'data', 'requests');
-                const unsubReq = onSnapshot(reqCol, 
-                    (snap) => {
-                        setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                    },
-                    (error) => console.error("Requests fetch error:", error)
-                );
+                const unsubReq = onSnapshot(reqCol, (snap) => {
+                    setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                }, (err) => console.error("Firestore requests error:", err));
 
-                return () => {
-                    unsubFleet();
-                    unsubReq();
-                };
+                return () => { unsubFleet(); unsubReq(); };
             }, [user]);
 
-            // Dashboard Chart
+            // Charts
             const chartRef = useRef(null);
             useEffect(() => {
-                if (activeTab === 'dashboard' && fleet.length > 0) {
+                if (activeTab === 'dashboard' && isCEO && fleet.length > 0) {
                     const ctx = document.getElementById('fleetChart')?.getContext('2d');
                     if (ctx) {
                         if (chartRef.current) chartRef.current.destroy();
                         const manuMap = {};
-                        fleet.forEach(p => manuMap[p.manufacturer] = (manuMap[p.manufacturer] || 0) + 1);
-                        
+                        fleet.forEach(p => { if(p.manufacturer) manuMap[p.manufacturer] = (manuMap[p.manufacturer] || 0) + 1; });
                         chartRef.current = new Chart(ctx, {
                             type: 'doughnut',
                             data: {
                                 labels: Object.keys(manuMap),
                                 datasets: [{
                                     data: Object.values(manuMap),
-                                    backgroundColor: ['#0284c7', '#4f46e5', '#10b981', '#f59e0b', '#ef4444'],
-                                    borderWidth: 0
+                                    backgroundColor: ['#0284c7', '#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#ec4899'],
+                                    borderWidth: 0, cutout: '75%'
                                 }]
                             },
-                            options: { responsive: true, maintainAspectRatio: false, cutout: '70%' }
+                            options: { responsive: true, maintainAspectRatio: false }
                         });
                     }
                 }
-            }, [activeTab, fleet]);
+            }, [activeTab, isCEO, fleet]);
 
             // Database Handlers
-            const addPlane = async (e) => {
+            const handleAddPlane = async (e) => {
                 e.preventDefault();
-                if (!user) return;
+                const fd = new FormData(e.target);
                 try {
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'fleet'), {
-                        ...formData,
-                        ownerId: user.uid,
-                        range: Number(formData.range),
-                        seats: Number(formData.seats),
+                        reg: fd.get('reg'), 
+                        type: fd.get('type'), 
+                        manufacturer: fd.get('manufacturer'),
+                        cat: fd.get('cat'), 
+                        fleetType: fd.get('fleetType'),
+                        hub: fd.get('hub'),
+                        range: Number(fd.get('range')),
+                        status: fd.get('status'), 
+                        ownerId: user.uid, 
                         createdAt: new Date().toISOString()
                     });
                     setIsModalOpen(false);
-                    setFormData({ reg: '', type: '', manufacturer: 'Boeing', cat: 'M', status: 'Parkir', range: 5000, seats: 150, livery: 'Standard' });
-                } catch (err) { alert("Gagal menambah data."); }
+                    showToast("Armada berhasil didaftarkan!");
+                } catch (err) { showToast("Gagal menyimpan data."); }
             };
 
-            const sendConnectionRequest = async (plane) => {
-                if (!user) return;
-                const reqName = prompt("Masukkan Username WOA Anda untuk request koneksi:");
-                if (!reqName) return;
-
+            const handleSubmitRequest = async (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.target);
+                if (!planeToRequest || !user) return;
+                
                 try {
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'requests'), {
-                        planeId: plane.id,
-                        planeReg: plane.reg,
-                        ownerId: plane.ownerId,
-                        requesterName: reqName,
-                        requesterUid: user.uid,
-                        status: 'pending',
+                        planeId: planeToRequest.id, 
+                        planeReg: planeToRequest.reg, 
+                        ownerId: planeToRequest.ownerId,
+                        requesterName: fd.get('ign'), 
+                        destinationHub: fd.get('destination'),
+                        requesterUid: user.uid, 
+                        status: 'pending', 
                         timestamp: new Date().toISOString()
                     });
-                    alert("Request koneksi berhasil dikirim!");
-                } catch (err) { console.error(err); }
+                    setIsRequestModalOpen(false);
+                    setPlaneToRequest(null);
+                    showToast("Permintaan kontrak terkirim!");
+                } catch (err) { showToast("Gagal mengirim permintaan."); }
             };
 
-            const handleUpdateStatus = async (id, status) => {
-                if (!user) return;
+            const handleUpdateStatus = async (id, s) => { 
+                try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'requests', id), { status: s }); } catch (err) { console.error(err); }
+            };
+
+            const confirmDelete = async () => {
+                if (!planeToDelete || !user) return;
                 try {
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'requests', id), { status });
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fleet', planeToDelete));
+                    setIsDeleteModalOpen(false);
+                    setPlaneToDelete(null);
+                    showToast("Unit berhasil dihapus.");
                 } catch (err) { console.error(err); }
             };
 
-            const handleDeletePlane = async (id) => {
-                if (!user) return;
-                if (!confirm("Hapus pesawat ini?")) return;
-                try {
-                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fleet', id));
-                } catch (err) { console.error(err); }
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (cooldownTime > 0) return;
+                const inputCode = e.target.code.value;
+                if (inputCode === ADMIN_CODE) {
+                    setIsCEO(true); setIsLoginModalOpen(false); setActiveTab('dashboard'); setLoginError(""); setAttempts(0);
+                    showToast("Akses CEO Diterima.");
+                } else { 
+                    const nextAttempts = attempts + 1;
+                    if (nextAttempts >= 3) {
+                        setLoginError("Anda bukan CEO disini !");
+                        setCooldownTime(60); setAttempts(0);
+                    } else {
+                        setLoginError(`Kode salah ! Sisa percobaan: ${3 - nextAttempts}`);
+                        setAttempts(nextAttempts);
+                    }
+                    setIsShaking(true); setTimeout(() => setIsShaking(false), 500);
+                }
+                e.target.code.value = "";
             };
 
-            const myPlanes = fleet.filter(p => p.ownerId === user?.uid);
-            const incomingReqs = requests.filter(r => r.ownerId === user?.uid && r.status === 'pending');
+            const incoming = requests.filter(r => r.status === 'pending');
+            const filteredFleet = useMemo(() => fleet.filter(p => {
+                const ms = (p.reg || "").toLowerCase().includes(searchQuery.toLowerCase()) || (p.type || "").toLowerCase().includes(searchQuery.toLowerCase());
+                const mf = filterSize === 'All' || p.cat === filterSize;
+                const mt = filterFleetType === 'All' || p.fleetType === filterFleetType;
+                return ms && mf && mt;
+            }), [fleet, searchQuery, filterSize, filterFleetType]);
 
             if (loading) return (
                 <div className="h-screen flex flex-col items-center justify-center bg-slate-50">
-                    <div className="w-12 h-12 border-4 border-sky-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-                    <p className="font-bold text-sky-600">Menghubungkan ke Radar...</p>
+                    <div className="w-10 h-10 border-4 border-sky-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                    <p className="font-bold text-slate-500 uppercase tracking-widest text-xs">Mempersiapkan Radar...</p>
                 </div>
             );
 
             return (
-                <div className="min-h-screen">
-                    {/* Navigation */}
-                    <nav className="bg-white border-b border-slate-200 sticky top-0 z-50">
-                        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="bg-sky-600 p-2 rounded-xl text-white shadow-lg"><Icon name="plane" /></div>
-                                <span className="font-black text-xl tracking-tight hidden sm:block uppercase text-slate-800">Fleet Hub</span>
+                <div className="min-h-screen flex flex-col text-slate-800">
+                    {/* NAV BAR */}
+                    <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-4 h-20 shadow-sm">
+                        <div className="max-w-6xl mx-auto h-full flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-sky-600 p-2.5 rounded-2xl text-white shadow-lg shadow-sky-100 transition-transform hover:scale-105"><Icon name="plane" size={24}/></div>
+                                <div className="flex flex-col">
+                                    <span className="font-black text-xl leading-none tracking-tighter text-slate-900 uppercase">CendraNova Aviation</span>
+                                    <span className="text-[10px] font-bold text-sky-600 tracking-[0.2em] uppercase mt-1">Fleet - Management</span>
+                                </div>
+                                {isCEO && <span className="hidden lg:inline bg-amber-100 text-amber-700 text-[9px] font-black px-2.5 py-1 rounded-full ml-2 animate-pulse uppercase tracking-wider">CEO Active</span>}
                             </div>
-                            <div className="flex gap-1">
-                                <NavTab active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon="layout-dashboard" label="Beranda" />
-                                <NavTab active={activeTab === 'fleet'} onClick={() => setActiveTab('fleet')} icon="list" label="Katalog" />
-                                <NavTab active={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} icon="bell" label="Inbox" badge={incomingReqs.length} />
+                            <div className="flex gap-1.5">
+                                {isCEO && <NavTab active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon="layout-dashboard" label="Stats" />}
+                                <NavTab active={activeTab === 'katalog'} onClick={() => setActiveTab('katalog')} icon="list" label="Armada" />
+                                {isCEO && <NavTab active={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} icon="bell" label="Kontrak" badge={incoming.length} />}
                             </div>
                         </div>
                     </nav>
 
-                    <main className="max-w-6xl mx-auto px-4 py-8">
-                        {/* VIEW: DASHBOARD */}
-                        {activeTab === 'dashboard' && (
-                            <div className="space-y-8 animate-fade-up">
-                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                    <div>
-                                        <h1 className="text-3xl font-black text-slate-900">Pusat Kendali</h1>
-                                        <p className="text-slate-500 text-sm">Monitor armada pribadi dan permintaan koneksi global.</p>
-                                    </div>
-                                    <button onClick={() => setIsModalOpen(true)} className="bg-sky-600 hover:bg-sky-700 text-white font-bold px-6 py-3 rounded-2xl shadow-xl shadow-sky-100 flex items-center gap-2 transition-all active:scale-95">
-                                        <Icon name="plus-circle" /> Tambah Pesawat
+                    <main className="max-w-6xl mx-auto p-4 py-8 flex-grow w-full">
+                        
+                        {/* VIEW: DASHBOARD (CEO Only) */}
+                        {activeTab === 'dashboard' && isCEO && (
+                            <div className="animate-fade space-y-8">
+                                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                                    <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Pusat Kontrol CEO</h1>
+                                    <button onClick={() => setIsModalOpen(true)} className="bg-sky-600 text-white px-8 py-3 rounded-2xl font-bold shadow-xl shadow-sky-100 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 text-xs uppercase tracking-widest cursor-pointer">
+                                        <Icon name="plus-circle" size={18}/> Tambah Unit
                                     </button>
                                 </div>
-
-                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                    <StatCard label="Pesawat Saya" value={myPlanes.length} icon="plane" color="text-sky-600" bg="bg-sky-50" />
-                                    <StatCard label="Request Masuk" value={incomingReqs.length} icon="mail" color="text-amber-600" bg="bg-amber-50" />
-                                    <StatCard label="Kapasitas Pax" value={myPlanes.reduce((s, p) => s + p.seats, 0).toLocaleString()} icon="users" color="text-indigo-600" bg="bg-indigo-50" />
-                                    <StatCard label="Total Global" value={fleet.length} icon="globe" color="text-slate-500" bg="bg-slate-50" />
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <StatCard label="Unit Armada" value={fleet.length} icon={<Icon name="plane" size={24}/>} color="text-sky-600" bg="bg-sky-50" />
+                                    <StatCard label="Hub Aktif" value={new Set(fleet.map(p => p.hub)).size} icon={<Icon name="map-pin" size={24}/>} color="text-indigo-600" bg="bg-indigo-50" />
+                                    <StatCard label="Antrean Kontrak" value={incoming.length} icon={<Icon name="mail" size={24}/>} color="text-amber-600" bg="bg-amber-50" />
+                                    <StatCard label="Unit Kerja" value={fleet.filter(p => p.status === 'Kerja').length} icon={<Icon name="briefcase" size={24}/>} color="text-emerald-600" bg="bg-emerald-50" />
                                 </div>
-
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                        <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
-                                            <span className="w-1.5 h-5 bg-sky-500 rounded-full"></span>
-                                            Distribusi Pabrikan
-                                        </h3>
-                                        <div className="chart-container">
-                                            {fleet.length > 0 ? <canvas id="fleetChart"></canvas> : <div className="flex h-full items-center justify-center text-slate-300">Belum ada data</div>}
-                                        </div>
-                                    </div>
-                                    <div className="bg-indigo-600 rounded-3xl p-8 text-white shadow-xl flex flex-col justify-between">
-                                        <div>
-                                            <h3 className="text-2xl font-black mb-2">Bagikan Katalog</h3>
-                                            <p className="text-indigo-100 text-sm opacity-90 mb-6 leading-relaxed">
-                                                Gunakan link website ini untuk memamerkan armada Anda ke komunitas World of Airports agar pemain lain dapat mengajukan permintaan koneksi.
-                                            </p>
-                                            <div className="bg-white/10 p-3 rounded-xl border border-white/20 flex items-center justify-between">
-                                                <code className="text-xs truncate mr-2">{window.location.href}</code>
-                                                <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert("Link disalin!"); }} className="bg-white text-indigo-600 text-[10px] font-black px-3 py-1.5 rounded-lg">COPY</button>
-                                            </div>
-                                        </div>
-                                    </div>
+                                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                                    <h3 className="font-bold text-slate-800 mb-8 flex items-center gap-2.5 uppercase tracking-tighter"><span className="w-1.5 h-6 bg-sky-500 rounded-full"></span> Komposisi Armada CendraNova</h3>
+                                    <div className="chart-container"><canvas id="fleetChart"></canvas></div>
                                 </div>
                             </div>
                         )}
 
-                        {/* VIEW: FLEET CATALOG */}
-                        {activeTab === 'fleet' && (
-                            <div className="space-y-6 animate-fade-up">
-                                <div>
-                                    <h2 className="text-2xl font-black text-slate-900">Katalog Armada</h2>
-                                    <p className="text-slate-500 text-sm">Daftar pesawat yang tersedia di jaringan global.</p>
+                        {/* VIEW: KATALOG (Public) */}
+                        {activeTab === 'katalog' && (
+                            <div className="animate-fade space-y-8">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                                    <div>
+                                        <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Radar Armada CendraNova</h2>
+                                        <p className="text-slate-500 text-sm">Cari unit yang sesuai dan ajukan permintaan kontrak rute.</p>
+                                    </div>
+                                    <div className="flex flex-col gap-3">
+                                        <div className="flex gap-1.5 justify-end">
+                                            {['All', 'Pax', 'Cargo'].map(t => (
+                                                <button key={t} onClick={() => setFilterFleetType(t)} className={`px-4 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all cursor-pointer ${filterFleetType === t ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-400'}`}>{t === 'All' ? 'ALL SERVICE' : t.toUpperCase()}</button>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-1.5 overflow-x-auto pb-2 md:pb-0">
+                                            {['All', 'A', 'B', 'C', 'D', 'E', 'F'].map(s => (
+                                                <button key={s} onClick={() => setFilterSize(s)} className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all cursor-pointer ${filterSize === s ? 'bg-sky-600 text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200 hover:border-sky-300'}`}>
+                                                    {s === 'All' ? 'ALL SIZE' : `TYPE ${s}`}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-5 flex items-center text-slate-400 group-focus-within:text-sky-500 transition-colors"><Icon name="search" size={18} /></div>
+                                    <input type="text" placeholder="Cari armada berdasarkan Registrasi atau Model..." className="w-full bg-white border border-slate-200 rounded-[1.5rem] py-5 pl-14 pr-6 focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 outline-none transition-all shadow-sm font-medium" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {fleet.map(p => (
-                                        <div key={p.id} className="bg-white rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col">
-                                            <div className="p-6 flex-grow">
-                                                <div className="flex justify-between items-start mb-4">
+                                    {filteredFleet.map(p => (
+                                        <div key={p.id} className="bg-white rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group card-hover">
+                                            <div className="p-8 flex-grow">
+                                                <div className="flex justify-between items-start mb-6">
                                                     <div>
-                                                        <span className="font-mono font-black text-xl text-slate-900 block">{p.reg}</span>
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{p.manufacturer}</span>
+                                                        <span className="font-mono font-black text-2xl text-slate-900 block tracking-tighter group-hover:text-sky-600 transition-colors uppercase">{p.reg}</span>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.1em]">{p.manufacturer}</p>
+                                                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest ${p.fleetType === 'Cargo' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                {p.fleetType}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                    <span className={`text-[10px] font-black px-2 py-1 rounded-lg uppercase ${
-                                                        p.cat === 'XL' ? 'bg-purple-100 text-purple-600' :
-                                                        p.cat === 'L' ? 'bg-indigo-100 text-indigo-600' :
-                                                        p.cat === 'M' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600'
-                                                    }`}>
-                                                        Class {p.cat}
-                                                    </span>
+                                                    <span className="text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-tighter shadow-sm bg-slate-100 text-slate-600 border border-slate-200">Type {p.cat}</span>
                                                 </div>
-                                                <h4 className="font-bold text-slate-800 mb-1">{p.type}</h4>
-                                                <div className="flex gap-4 mb-4 text-[11px] font-bold text-slate-500">
-                                                    <span>✈ {p.range.toLocaleString()} NM</span>
-                                                    <span>👥 {p.seats} Pax</span>
+                                                <h4 className="font-extrabold text-slate-800 text-lg mb-1">{p.type}</h4>
+                                                
+                                                <div className="mt-4 grid grid-cols-2 gap-3 text-center">
+                                                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-1">
+                                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Hub Basis</span>
+                                                        <div className="flex items-center gap-1.5 justify-center">
+                                                            <Icon name="map-pin" size={12} className="text-indigo-500" />
+                                                            <span className="text-xs font-black text-slate-700 uppercase">{p.hub}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-1">
+                                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Status Op</span>
+                                                        <div className="flex items-center gap-1.5 justify-center">
+                                                            <div className={`w-2 h-2 rounded-full ${p.status === 'Kerja' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                                                            <span className="text-xs font-black text-slate-700 uppercase">{p.status}</span>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <p className="text-xs text-slate-400 italic">Livery: {p.livery}</p>
                                             </div>
-                                            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
-                                                <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${p.status === 'Terbang' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-200 text-slate-500'}`}>
-                                                    {p.status}
-                                                </span>
-                                                {p.ownerId === user?.uid ? (
-                                                    <button onClick={() => handleDeletePlane(p.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Icon name="trash-2" size={18} /></button>
+                                            <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-end items-center px-8">
+                                                {isCEO ? (
+                                                    <button onClick={() => { setPlaneToDelete(p.id); setIsDeleteModalOpen(true); }} className="text-slate-300 hover:text-red-500 p-2 transition-colors cursor-pointer"><Icon name="trash-2" size={20} /></button>
                                                 ) : (
-                                                    <button onClick={() => sendConnectionRequest(p)} className="bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-black px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-all active:scale-95">
-                                                        <Icon name="send" size={14} /> REQUEST
+                                                    <button 
+                                                        onClick={() => { setPlaneToRequest(p); setIsRequestModalOpen(true); }} 
+                                                        className="bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-black px-6 py-2.5 rounded-2xl shadow-lg shadow-sky-100 transition-all active:scale-95 uppercase tracking-widest cursor-pointer"
+                                                    >
+                                                        Request
                                                     </button>
                                                 )}
                                             </div>
                                         </div>
                                     ))}
-                                    {fleet.length === 0 && <div className="col-span-full py-20 text-center text-slate-300 font-bold border-2 border-dashed rounded-3xl">Belum ada pesawat.</div>}
                                 </div>
                             </div>
                         )}
 
-                        {/* VIEW: INBOX */}
-                        {activeTab === 'inbox' && (
-                            <div className="max-w-2xl mx-auto space-y-6 animate-fade-up">
-                                <div>
-                                    <h2 className="text-2xl font-black text-slate-900">Kotak Masuk Request</h2>
-                                    <p className="text-slate-500 text-sm">Kelola permintaan koneksi bandara untuk armada Anda.</p>
-                                </div>
+                        {/* VIEW: INBOX (CEO Only) */}
+                        {activeTab === 'inbox' && isCEO && (
+                            <div className="animate-fade max-w-2xl mx-auto space-y-8">
+                                <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Manajemen Kontrak</h2>
                                 <div className="space-y-4">
-                                    {incomingReqs.length === 0 ? (
-                                        <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center text-slate-400">Belum ada permintaan koneksi.</div>
-                                    ) : (
-                                        incomingReqs.map(req => (
-                                            <div key={req.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-12 h-12 bg-sky-50 text-sky-600 rounded-2xl flex items-center justify-center font-black">{req.planeReg.charAt(0)}</div>
-                                                    <div>
-                                                        <p className="text-sm font-bold"><span className="text-sky-600">{req.requesterName}</span> ingin koneksi ke <span className="text-slate-900">{req.planeReg}</span></p>
-                                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{new Date(req.timestamp).toLocaleDateString()}</p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => handleUpdateStatus(req.id, 'accepted')} className="bg-emerald-500 text-white p-2.5 rounded-xl shadow-lg shadow-emerald-100 transition-transform active:scale-90"><Icon name="check" /></button>
-                                                    <button onClick={() => handleUpdateStatus(req.id, 'declined')} className="bg-slate-100 text-slate-400 p-2.5 rounded-xl transition-transform active:scale-90"><Icon name="x" /></button>
+                                    {incoming.length === 0 ? <div className="bg-white p-24 rounded-[3rem] border border-slate-100 text-center shadow-sm"><Icon name="bell-off" size={48} className="mx-auto mb-5 opacity-10"/><p className="font-bold text-slate-400 tracking-tight">Belum ada rute baru diajukan.</p></div> : incoming.map(req => (
+                                        <div key={req.id} className="bg-white p-7 rounded-[2rem] border border-slate-100 shadow-sm flex items-center justify-between hover:border-sky-300 transition-all group">
+                                            <div className="flex items-center gap-5">
+                                                <div className="w-16 h-16 bg-sky-50 text-sky-600 rounded-[1.2rem] flex items-center justify-center font-black text-2xl group-hover:bg-sky-600 group-hover:text-white transition-colors shadow-inner uppercase">{req.planeReg.charAt(0)}</div>
+                                                <div className="flex-1">
+                                                    <p className="text-sm font-bold leading-tight">
+                                                        <span className="text-sky-600 font-black">{req.requesterName}</span> 
+                                                        <span className="text-slate-500 font-medium px-1">minta ke</span> 
+                                                        <span className="text-slate-800 font-black">{req.destinationHub} Hub</span>
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Unit: {req.planeReg}</p>
+                                                    <p className="text-[10px] text-slate-400 font-black uppercase mt-1 flex items-center gap-1.5"><Icon name="clock" size={10} /> {new Date(req.timestamp).toLocaleString()}</p>
                                                 </div>
                                             </div>
-                                        ))
-                                    )}
-                                </div>
-                                {requests.filter(r => r.ownerId === user?.uid && r.status === 'accepted').length > 0 && (
-                                    <div className="pt-8">
-                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Kontrak Disetujui</h3>
-                                        <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden divide-y divide-slate-50">
-                                            {requests.filter(r => r.ownerId === user?.uid && r.status === 'accepted').map(req => (
-                                                <div key={req.id} className="p-4 flex justify-between items-center text-xs">
-                                                    <span className="font-bold">{req.planeReg} ↔ {req.requesterName}</span>
-                                                    <span className="text-[9px] font-black px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-full">CONNECTED</span>
-                                                </div>
-                                            ))}
+                                            <div className="flex gap-3">
+                                                <button onClick={() => handleUpdateStatus(req.id, 'accepted')} className="bg-emerald-500 hover:bg-emerald-600 text-white p-3.5 rounded-2xl shadow-lg shadow-emerald-100 transition-transform active:scale-90 cursor-pointer"><Icon name="check" size={22} /></button>
+                                                <button onClick={() => handleUpdateStatus(req.id, 'declined')} className="bg-slate-100 hover:bg-red-50 hover:text-red-500 text-slate-400 p-3.5 rounded-2xl transition-all active:scale-90 cursor-pointer"><Icon name="x" size={22} /></button>
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </main>
 
-                    {/* MODAL: ADD PLANE */}
-                    {isModalOpen && (
+                    {/* FOOTER & LOGIN CEO */}
+                    <footer className="py-14 text-center border-t border-slate-100 mt-auto bg-white/50">
+                        {!isCEO ? (
+                            <button onClick={() => { setIsLoginModalOpen(true); setAttempts(0); setLoginError(""); }} className="text-slate-300 hover:text-sky-400 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center gap-3 mx-auto transition-all cursor-pointer"><Icon name="lock" size={12}/> CEO CendraNova Access</button>
+                        ) : (
+                            <button onClick={() => setIsCEO(false)} className="text-red-300 hover:text-red-500 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center gap-3 mx-auto transition-all cursor-pointer"><Icon name="log-out" size={12}/> Keluar Pusat Kontrol</button>
+                        )}
+                        <p className="text-[9px] text-slate-300 font-black uppercase tracking-[0.6em] mt-8">CendraNova Aviation &copy; 2026</p>
+                    </footer>
+
+                    {/* TOAST */}
+                    {toast.visible && (
+                        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 font-bold text-sm tracking-tight bg-slate-900 text-white animate-fade`}>
+                            <Icon name="check-circle" size={18} />
+                            {toast.message}
+                        </div>
+                    )}
+
+                    {/* MODAL: LOGIN CEO */}
+                    {isLoginModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                            <form onSubmit={addPlane} className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg p-8 animate-fade-up">
-                                <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">Daftarkan Pesawat</h3>
-                                    <button type="button" onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                            <form onSubmit={handleLogin} className={`bg-white rounded-[3rem] p-12 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/50 ${isShaking ? 'shake' : ''}`}>
+                                <div className="w-16 h-16 bg-sky-50 text-sky-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner"><Icon name="shield-check" size={32} /></div>
+                                <h3 className="text-xl font-black text-slate-800 mb-2 tracking-tight uppercase">Otentikasi CEO</h3>
+                                <p className="text-[10px] text-slate-400 mb-8 font-bold uppercase tracking-widest leading-relaxed text-center px-4">Masukkan 6-digit kode akses internal CendraNova.</p>
+                                <div className="relative mb-8 text-center">
+                                    <input name="code" type="password" placeholder="••••••" maxLength="6" disabled={cooldownTime > 0} className={`w-full bg-slate-50 p-6 rounded-[1.5rem] text-center text-3xl font-black tracking-[0.6em] border-none outline-none focus:ring-2 focus:ring-sky-500 shadow-inner transition-all ${cooldownTime > 0 ? 'opacity-50 grayscale' : ''}`} required autoFocus />
+                                    {loginError && <p className="text-red-500 text-[10px] font-black uppercase mt-3 tracking-widest text-center">{loginError}</p>}
                                 </div>
-                                <div className="grid grid-cols-2 gap-4 mb-6">
-                                    <InputGroup label="Registrasi" value={formData.reg} onChange={v => setFormData({...formData, reg: v})} placeholder="PK-GIA" />
-                                    <InputGroup label="Tipe Pesawat" value={formData.type} onChange={v => setFormData({...formData, type: v})} placeholder="B77W / A333" />
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Pabrikan</label>
-                                        <select className="w-full bg-slate-50 px-4 py-3 rounded-2xl font-bold text-sm outline-none" value={formData.manufacturer} onChange={e => setFormData({...formData, manufacturer: e.target.value})}>
-                                            {['Boeing', 'Airbus', 'ATR', 'Embraer', 'Other'].map(m => <option key={m}>{m}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Kelas</label>
-                                        <select className="w-full bg-slate-50 px-4 py-3 rounded-2xl font-bold text-sm outline-none" value={formData.cat} onChange={e => setFormData({...formData, cat: e.target.value})}>
-                                            {['S', 'M', 'L', 'XL'].map(c => <option key={c} value={c}>{c} Class</option>)}
-                                        </select>
-                                    </div>
-                                    <InputGroup label="Range (NM)" type="number" value={formData.range} onChange={v => setFormData({...formData, range: v})} />
-                                    <InputGroup label="Pax Capacity" type="number" value={formData.seats} onChange={v => setFormData({...formData, seats: v})} />
-                                </div>
-                                <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white py-4 rounded-2xl font-black shadow-lg shadow-sky-100 transition-all active:scale-[0.98]">SIMPAN KE CLOUD</button>
+                                <button type="submit" disabled={cooldownTime > 0} className={`w-full py-5 rounded-[1.3rem] font-black shadow-xl transition-all active:scale-95 uppercase tracking-[0.2em] text-xs cursor-pointer ${cooldownTime > 0 ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-100'}`}>
+                                    {cooldownTime > 0 ? `Terkunci (${cooldownTime}s)` : 'Akses Sistem'}
+                                </button>
+                                <button type="button" onClick={() => { setIsLoginModalOpen(false); setLoginError(""); setAttempts(0); }} className="w-full mt-4 text-slate-400 text-[10px] font-black py-2 tracking-widest uppercase hover:text-slate-600 transition-colors cursor-pointer">Batalkan</button>
                             </form>
+                        </div>
+                    )}
+
+                    {/* MODAL: CUSTOM REQUEST */}
+                    {isRequestModalOpen && planeToRequest && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                            <form onSubmit={handleSubmitRequest} className="bg-white rounded-[3rem] p-10 w-full max-w-md shadow-2xl animate-fade border border-white/50 relative">
+                                <button type="button" onClick={() => { setIsRequestModalOpen(false); setPlaneToRequest(null); }} className="absolute top-8 right-8 text-slate-300 hover:text-slate-500 bg-slate-50 p-2 rounded-full transition-all cursor-pointer"><Icon name="x" size={18} /></button>
+                                <div className="text-center mb-8">
+                                    <div className="w-16 h-16 bg-sky-50 text-sky-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-6 shadow-inner"><Icon name="send" size={32} /></div>
+                                    <h3 className="text-xl font-black text-slate-800 mb-2 uppercase text-center">Request Koneksi</h3>
+                                    <p className="text-sm text-slate-500 font-medium px-4 text-center">Unit <span className="font-bold text-sky-600 uppercase">{planeToRequest.reg}</span></p>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-3 mb-6 text-center">
+                                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-col items-center">
+                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 text-center">Berbasis di Hub</span>
+                                        <div className="flex items-center gap-1.5">
+                                            <Icon name="map-pin" size={12} className="text-indigo-500" />
+                                            <span className="text-sm font-black text-slate-700">{planeToRequest.hub}</span>
+                                        </div>
+                                    </div>
+                                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-col items-center">
+                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 text-center">Jangkauan Unit</span>
+                                        <div className="flex items-center gap-1.5">
+                                            <Icon name="navigation-2" size={12} className="text-sky-500" />
+                                            <span className="text-sm font-black text-slate-700">{(planeToRequest.range || 0).toLocaleString()} NM</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4 mb-10 text-center">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest block text-center">ID / In Game Name (IGN)</label>
+                                        <input name="ign" required placeholder="Nama CEO Anda" className="w-full bg-slate-50 p-4 rounded-[1.2rem] font-bold border-none outline-none focus:ring-2 focus:ring-sky-500 shadow-inner text-center" autoFocus />
+                                    </div>
+                                    <div className="space-y-1.5 text-center">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest block text-center text-center">Bandara Tujuan (Hub CendraNova)</label>
+                                        <select name="destination" required className="w-full bg-slate-50 p-4 rounded-[1.2rem] font-bold border-none outline-none focus:ring-2 focus:ring-sky-500 shadow-inner appearance-none cursor-pointer text-center">
+                                            <option value="" disabled selected>Pilih Hub Tujuan...</option>
+                                            {HUB_LIST.map(hub => (
+                                                <option key={hub} value={hub}>{hub} Hub</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white py-5 rounded-[1.5rem] font-black shadow-xl shadow-sky-100 active:scale-95 transition-all uppercase tracking-[0.2em] text-sm cursor-pointer">Kirim Permintaan</button>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* MODAL: REGISTRASI UNIT (CEO Only) */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                            <form onSubmit={handleAddPlane} className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-lg p-12 animate-fade overflow-hidden relative shadow-black/30">
+                                <button type="button" onClick={() => setIsModalOpen(false)} className="absolute top-10 right-10 text-slate-300 hover:text-slate-500 bg-slate-50 p-2.5 rounded-full transition-all cursor-pointer"><Icon name="x" size={20}/></button>
+                                <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-12 text-center uppercase">Registrasi Unit</h3>
+                                <div className="grid grid-cols-2 gap-6 mb-12 text-sm">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Reg Unit</label>
+                                        <input name="reg" required placeholder="PK-CNS" className="w-full bg-slate-50 p-4 rounded-[1.3rem] font-bold border-none outline-none focus:ring-2 focus:ring-sky-500 shadow-inner uppercase" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Model Pesawat</label>
+                                        <input name="type" required placeholder="B77W / A359" className="w-full bg-slate-50 p-4 rounded-[1.3rem] font-bold border-none outline-none focus:ring-2 focus:ring-sky-500 shadow-inner" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Tipe Layanan</label>
+                                        <select name="fleetType" className="w-full bg-slate-50 p-4 rounded-[1.3rem] font-bold border-none outline-none appearance-none shadow-inner cursor-pointer">
+                                            <option value="Pax">Passenger (PAX)</option>
+                                            <option value="Cargo">Cargo</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Kelas Ukuran</label>
+                                        <select name="cat" className="w-full bg-slate-50 p-4 rounded-[1.3rem] font-bold border-none outline-none appearance-none shadow-inner cursor-pointer">
+                                            {['A', 'B', 'C', 'D', 'E', 'F'].map(c => <option key={c} value={c}>Type {c}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest text-center block">Hub Basis</label>
+                                        <select name="hub" className="w-full bg-slate-50 p-4 rounded-[1.3rem] font-bold border-none outline-none appearance-none shadow-inner cursor-pointer text-center">
+                                            {HUB_LIST.map(h => <option key={h} value={h}>{h} Hub</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2 text-center">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest text-center block">Range (NM)</label>
+                                        <input name="range" type="number" required placeholder="7000" className="w-full bg-slate-50 p-4 rounded-[1.3rem] font-bold border-none outline-none focus:ring-2 focus:ring-sky-500 shadow-inner text-center" />
+                                    </div>
+                                    <div className="col-span-2 space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">Manufaktur</label>
+                                        <select name="manufacturer" className="w-full bg-slate-50 p-4 rounded-[1.3rem] font-bold border-none outline-none appearance-none shadow-inner cursor-pointer">
+                                            {['Airbus', 'Boeing', 'ATR', 'Embraer', 'Other'].map(m => <option key={m} value={m}>{m}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="col-span-2 space-y-2 text-center">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest text-center block">Status Unit</label>
+                                        <select name="status" className="w-full bg-slate-50 p-4 rounded-[1.3rem] font-bold border-none outline-none appearance-none shadow-inner cursor-pointer text-center">
+                                            <option value="Kerja">Kerja</option>
+                                            <option value="Nganggur">Nganggur</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white py-5 rounded-[1.6rem] font-black shadow-xl shadow-sky-100 active:scale-95 transition-all uppercase tracking-[0.2em] text-sm cursor-pointer">Registrasikan Unit</button>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* MODAL: DELETE CONFIRMATION */}
+                    {isDeleteModalOpen && (
+                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4 text-center">
+                            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/20">
+                                <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner"><Icon name="trash-2" size={32} /></div>
+                                <h3 className="text-xl font-black text-slate-800 mb-2 uppercase">Konfirmasi Hapus</h3>
+                                <p className="text-sm text-slate-500 mb-8 font-medium px-4">Anda yakin ingin menghapus unit ini secara permanen?</p>
+                                <div className="flex flex-col gap-3">
+                                    <button onClick={confirmDelete} className="w-full bg-red-500 hover:bg-red-600 text-white py-4 rounded-[1.2rem] font-black shadow-lg shadow-red-100 transition-all active:scale-95 uppercase tracking-widest text-xs cursor-pointer">Hapus Sekarang</button>
+                                    <button onClick={() => { setIsDeleteModalOpen(false); setPlaneToDelete(null); }} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-500 py-4 rounded-[1.2rem] font-black transition-all active:scale-95 uppercase tracking-widest text-xs cursor-pointer">Batalkan</button>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -400,31 +621,22 @@
         }
 
         const NavTab = ({ active, onClick, icon, label, badge = 0 }) => (
-            <button onClick={onClick} className={`relative flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl font-bold text-sm transition-all ${active ? 'bg-sky-50 text-sky-600' : 'text-slate-400 hover:text-slate-600'}`}>
-                <Icon name={icon} size={18} />
-                <span className="hidden md:inline">{label}</span>
-                {badge > 0 && <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full border-2 border-white font-black">{badge}</span>}
+            <button onClick={onClick} className={`relative flex items-center gap-2.5 px-4 sm:px-7 py-3.5 rounded-2xl font-black text-[10px] sm:text-[11px] tracking-widest transition-all cursor-pointer ${active ? 'bg-sky-600 text-white shadow-lg shadow-sky-200 scale-105' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}>
+                <Icon name={icon} size={18} /> 
+                <span className="hidden md:inline uppercase ml-1">{label}</span>
+                {badge > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] bg-red-500 text-white text-[9px] flex items-center justify-center rounded-full border-2 border-white font-extrabold">{badge}</span>}
             </button>
         );
 
         const StatCard = ({ label, value, icon, color, bg }) => (
-            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
-                <div className={`w-10 h-10 ${bg} ${color} rounded-xl flex items-center justify-center mb-4`}><Icon name={icon} size={20} /></div>
-                <div className="text-2xl font-black text-slate-900">{value}</div>
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{label}</div>
-            </div>
-        );
-
-        const InputGroup = ({ label, value, onChange, placeholder, type = "text" }) => (
-            <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest">{label}</label>
-                <input required type={type} placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} className="w-full bg-slate-50 px-4 py-3 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-sky-500 transition-all" />
+            <div className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all hover:shadow-md hover:-translate-y-1">
+                <div className={`w-14 h-14 ${bg} ${color} rounded-[1.4rem] flex items-center justify-center mb-6 shadow-sm shadow-black/5`}>{icon}</div>
+                <div className="text-3xl font-black text-slate-900 tracking-tighter">{value}</div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">{label}</div>
             </div>
         );
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
-    <script src="https://unpkg.com/lucide@latest"></script>
 </body>
 </html>
