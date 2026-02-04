@@ -69,10 +69,12 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // PRIORITAS: Gunakan config sistem jika tersedia untuk menghindari API Key Error
+        // PRIORITAS: Gunakan config sistem atau cadangan asli dari gambar Firebase Anda
         const getFirebaseConfig = () => {
-            if (typeof window.__firebase_config !== 'undefined') {
-                return JSON.parse(window.__firebase_config);
+            if (typeof window.__firebase_config !== 'undefined' && window.__firebase_config) {
+                try {
+                    return JSON.parse(window.__firebase_config);
+                } catch(e) { console.error("Parse config error", e); }
             }
             return {
                 apiKey: "AIzaSyAwzTQjpzU3qPXaYnbHBG-JmZtAjMERKJs",
@@ -96,14 +98,12 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // Komponen Ikon yang lebih aman untuk mencegah removeChild error
+        // Komponen Ikon yang lebih stabil (Mencegah galat removeChild)
         const Icon = ({ name, size = 20, className = "" }) => {
             const iconRef = useRef(null);
             useEffect(() => { 
                 if (window.lucide && iconRef.current) {
-                    window.lucide.createIcons({
-                        targets: [iconRef.current]
-                    }); 
+                    window.lucide.createIcons({ targets: [iconRef.current] }); 
                 }
             }, [name]);
 
@@ -133,7 +133,7 @@
             const [planeToDelete, setPlaneToDelete] = useState(null);
             const [planeToRequest, setPlaneToRequest] = useState(null);
 
-            // Feedback & Security States
+            // UI Feedback States
             const [toast, setToast] = useState({ message: "", visible: false });
             const [loginError, setLoginError] = useState("");
             const [attempts, setAttempts] = useState(0);
@@ -150,10 +150,11 @@
                 setTimeout(() => setToast({ message: "", visible: false }), 4000);
             };
 
+            // Radar Diagnostic Timer
             useEffect(() => {
                 const timer = setTimeout(() => {
                     if (loading) setLoadTimeout(true);
-                }, 8000);
+                }, 10000); // 10 detik
                 return () => clearTimeout(timer);
             }, [loading]);
 
@@ -165,7 +166,7 @@
                 return () => clearInterval(timer);
             }, [cooldownTime]);
 
-            // Auth First (Rule 3)
+            // Authentication Flow
             useEffect(() => {
                 const initAuth = async () => {
                     try {
@@ -175,15 +176,24 @@
                             await signInAnonymously(auth);
                         }
                     } catch (error) { 
-                        console.error("Auth error:", error); 
+                        console.error("Auth error:", error);
+                        // Jika auth gagal total, matikan loading agar user bisa muat manual/diagnosa
+                        setLoading(false);
+                        setLoadTimeout(true);
                     }
                 };
                 initAuth();
-                const unsubscribe = onAuthStateChanged(auth, setUser);
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                    if (!u) {
+                        // Jika tidak ada user setelah dipaksa, pastikan loading tetap berhenti
+                        setTimeout(() => setLoading(false), 2000);
+                    }
+                });
                 return () => unsubscribe();
             }, []);
 
-            // Data Fetching (Rule 1 & 2)
+            // Data Fetching
             useEffect(() => {
                 if (!user) return;
                 const fleetCol = collection(db, 'artifacts', appId, 'public', 'data', 'fleet');
@@ -315,6 +325,7 @@
                 return ms && mf && mt;
             }), [fleet, searchQuery, filterSize, filterFleetType]);
 
+            // LOADING SCREEN
             if (loading) return (
                 <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
                     <div className="w-12 h-12 border-4 border-sky-600 border-t-transparent rounded-full animate-spin mb-6"></div>
@@ -326,9 +337,12 @@
                                 <Icon name="alert-triangle" size={14} /> Radar Bermasalah
                             </p>
                             <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-                                Website butuh waktu lama untuk terhubung. Harap pastikan fitur <b>Anonymous Sign-in</b> sudah aktif di Firebase Console Anda.
+                                Radar butuh waktu lama untuk terhubung. Harap pastikan fitur <b>Anonymous Sign-in</b> sudah "Enabled" di Firebase Console Anda.
                             </p>
-                            <button onClick={() => window.location.reload()} className="mt-4 w-full py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">Refresh Radar</button>
+                            <div className="flex flex-col gap-2 mt-4">
+                                <button onClick={() => window.location.reload()} className="w-full py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">Refresh Radar</button>
+                                <button onClick={() => setLoading(false)} className="w-full py-2 bg-sky-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">Muat Manual</button>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -336,7 +350,7 @@
 
             return (
                 <div className="min-h-screen flex flex-col text-slate-800">
-                    {/* NAVIGATION */}
+                    {/* NAVIGATION BAR */}
                     <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-4 h-20 shadow-sm">
                         <div className="max-w-6xl mx-auto h-full flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -524,7 +538,7 @@
                                 <button type="submit" disabled={cooldownTime > 0} className={`w-full py-5 rounded-[1.3rem] font-black shadow-xl transition-all active:scale-95 uppercase tracking-[0.2em] text-xs cursor-pointer ${cooldownTime > 0 ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-100'}`}>
                                     {cooldownTime > 0 ? `Terkunci (${cooldownTime}s)` : 'Akses Sistem'}
                                 </button>
-                                <button type="button" onClick={() => { setIsLoginModalOpen(false); setLoginError(""); setAttempts(0); }} className="w-full mt-4 text-slate-400 text-[10px] font-black py-2 tracking-widest uppercase hover:text-slate-600 transition-colors cursor-pointer">Batalkan</button>
+                                <button type="button" onClick={() => { setIsLoginModalOpen(false); setLoginError(""); setAttempts(0); }} className="w-full mt-4 text-slate-400 text-[10px] font-black py-2 tracking-widest uppercase hover:text-slate-600 transition-colors cursor-pointer text-center">Batalkan</button>
                             </form>
                         </div>
                     )}
@@ -605,7 +619,7 @@
                                             {['A', 'B', 'C', 'D', 'E', 'F'].map(c => <option key={c} value={c}>Type {c}</option>)}
                                         </select>
                                     </div>
-                                    <div className="space-y-2">
+                                    <div className="space-y-2 text-center">
                                         <label className="text-[10px] font-black text-slate-400 uppercase ml-1 tracking-widest text-center block">Hub Basis</label>
                                         <select name="hub" className="w-full bg-slate-50 p-4 rounded-[1.3rem] font-bold border-none outline-none appearance-none shadow-inner cursor-pointer text-center">
                                             {HUB_LIST.map(h => <option key={h} value={h}>{h} Hub</option>)}
@@ -640,10 +654,10 @@
                             <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/20">
                                 <div className="w-16 h-16 bg-red-50 text-red-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner"><Icon name="trash-2" size={32} /></div>
                                 <h3 className="text-xl font-black text-slate-800 mb-2 uppercase text-center">Konfirmasi Hapus</h3>
-                                <p className="text-sm text-slate-500 mb-8 font-medium px-4 text-center">Anda yakin ingin menghapus unit ini secara permanen?</p>
+                                <p className="text-sm text-slate-500 mb-8 font-medium px-4 text-center font-bold">Anda yakin ingin menghapus unit ini secara permanen?</p>
                                 <div className="flex flex-col gap-3">
                                     <button onClick={confirmDelete} className="w-full bg-red-500 hover:bg-red-600 text-white py-4 rounded-[1.2rem] font-black shadow-lg shadow-red-100 transition-all active:scale-95 uppercase tracking-widest text-xs cursor-pointer">Hapus Sekarang</button>
-                                    <button onClick={() => { setIsDeleteModalOpen(false); setPlaneToDelete(null); }} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-500 py-4 rounded-[1.2rem] font-black transition-all active:scale-95 uppercase tracking-widest text-xs cursor-pointer text-center">Batalkan</button>
+                                    <button onClick={() => { setIsDeleteModalOpen(false); setPlaneToDelete(null); }} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-500 py-4 rounded-[1.2rem] font-black transition-all active:scale-95 uppercase tracking-widest text-xs cursor-pointer text-center font-bold">Batalkan</button>
                                 </div>
                             </div>
                         </div>
@@ -663,7 +677,7 @@
         const StatCard = ({ label, value, icon, color, bg }) => (
             <div className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all hover:shadow-md hover:-translate-y-1 text-center">
                 <div className={`w-14 h-14 ${bg} ${color} rounded-[1.4rem] flex items-center justify-center mb-6 shadow-sm shadow-black/5 mx-auto`}>{icon}</div>
-                <div className="text-3xl font-black text-slate-900 tracking-tighter text-center">{value}</div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2 text-center">{label}</div>
+                <div className="text-3xl font-black text-slate-900 tracking-tighter text-center">{value}</div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2 text-center font-bold">{label}</div>
             </div>
         );
 
