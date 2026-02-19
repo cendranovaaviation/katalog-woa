@@ -39,6 +39,7 @@
         .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); }
         .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
         @keyframes shake { 10%, 90% { transform: translate3d(-1px, 0, 0); } 20%, 80% { transform: translate3d(2px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-4px, 0, 0); } 40%, 60% { transform: translate3d(4px, 0, 0); } }
+        
         .custom-select {
             -webkit-appearance: none;
             -moz-appearance: none;
@@ -79,7 +80,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // ID Aplikasi dinamis sesuai mandat sistem (PENTING untuk izin Firestore)
+        // ID Aplikasi dinamis (PENTING untuk izin Firestore)
         const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : "isl-404-notfound-hub";
         const ADMIN_CODE = "123456"; 
         
@@ -91,6 +92,7 @@
             { id: 'BKK', label: 'BKK', flag: '🇹🇭' }
         ];
 
+        // Link Google Form Aktif ISL
         const ISL_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScZUG2UOqp88KIfP2uzzJegJZqDiAa81my2Z3euumXYZlWtYg/closedform"; 
 
         const Icon = ({ name, size = 20, className = "" }) => {
@@ -136,6 +138,7 @@
                 setTimeout(() => setToast({ message: "", visible: false }), 4000);
             };
 
+            // Radar Diagnostic Timer
             useEffect(() => {
                 const timer = setTimeout(() => { if (loading) setLoadTimeout(true); }, 15000);
                 return () => clearTimeout(timer);
@@ -147,7 +150,7 @@
                 return () => clearInterval(timer);
             }, [cooldownTime]);
 
-            // Tahap 1: Autentikasi HARUS selesai sebelum melakukan query (Rule 3)
+            // Tahap 1: Autentikasi (WAJIB Rule 3)
             useEffect(() => {
                 const initAuth = async () => {
                     try {
@@ -164,18 +167,17 @@
                 initAuth();
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
                     if (u) {
-                        console.log("Autentikasi Berhasil:", u.uid);
                         setUser(u);
+                        console.log("Sistem Aktif: UID", u.uid);
                     }
                 });
                 return () => unsubscribe();
             }, []);
 
-            // Tahap 2: Fetch Data hanya jika USER sudah tersedia
+            // Tahap 2: Fetch Data hanya jika USER sudah tersedia (WAJIB Rule 1 & 3)
             useEffect(() => {
                 if (!user) return;
                 
-                // Gunakan struktur path wajib Rule 1
                 const fleetCol = collection(db, 'artifacts', appId, 'public', 'data', 'fleet');
                 
                 const unsubFleet = onSnapshot(fleetCol, (snap) => {
@@ -229,7 +231,7 @@
                         ownerId: user.uid, createdAt: new Date().toISOString()
                     });
                     setIsModalOpen(false);
-                    showToast("Armada berhasil didaftarkan!");
+                    showToast("Unit armada berhasil didaftarkan!");
                 } catch (err) { showToast("Gagal menyimpan data."); }
             };
 
@@ -238,7 +240,7 @@
                 const newStatus = currentStatus === 'Kerja' ? 'Nganggur' : 'Kerja';
                 try {
                     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fleet', planeId), { status: newStatus });
-                    showToast(`Status unit diperbarui ke ${newStatus}.`);
+                    showToast(`Status diperbarui ke ${newStatus}.`);
                 } catch (err) { showToast("Gagal update status."); }
             };
 
@@ -256,7 +258,7 @@
                 if (cooldownTime > 0) return;
                 if (e.target.code.value === ADMIN_CODE) {
                     setIsCEO(true); setIsLoginModalOpen(false); setActiveTab('dashboard'); setLoginError(""); setAttempts(0);
-                    showToast("Selamat datang, CEO!");
+                    showToast("Akses CEO Diterima!");
                 } else { 
                     const next = attempts + 1;
                     if (next >= 3) { setLoginError("Akses ditolak!"); setCooldownTime(60); setAttempts(0); }
@@ -280,15 +282,15 @@
                     
                     {(loadTimeout || permError) && (
                         <div className="mt-8 max-w-sm p-6 bg-white rounded-2xl shadow-xl border border-red-200 animate-fade">
-                            <p className="text-red-600 text-xs font-black uppercase mb-3 flex items-center justify-center gap-2"><Icon name="alert-triangle" size={14} /> Masalah Izin Ditemukan</p>
+                            <p className="text-red-600 text-xs font-bold uppercase mb-3 flex items-center justify-center gap-2"><Icon name="alert-triangle" size={14} /> Masalah Izin Ditemukan</p>
                             <p className="text-[11px] text-slate-500 leading-relaxed mb-4">
                                 {permError 
-                                    ? "Izin ditolak oleh Firebase. Mohon periksa kembali tab 'Authorized Domains' dan pastikan domain saat ini sudah terdaftar." 
-                                    : "Koneksi memakan waktu terlalu lama. Pastikan Anonymous Auth sudah AKTIF."}
+                                    ? "Izin ditolak oleh Firestore. Mohon pastikan domain GitHub Anda sudah terdaftar di tab 'Authorized Domains' di Firebase Console." 
+                                    : "Koneksi butuh waktu lama. Pastikan Anonymous Auth sudah AKTIF."}
                             </p>
                             <div className="flex flex-col gap-2">
-                                <button onClick={() => window.location.reload()} className="w-full py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">Refresh Halaman</button>
-                                <button onClick={() => { setLoading(false); setActiveTab('katalog'); }} className="w-full py-2 bg-sky-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">Masuk ke Antarmuka</button>
+                                <button onClick={() => window.location.reload()} className="w-full py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all">Refresh Halaman</button>
+                                <button onClick={() => { setLoading(false); setActiveTab('katalog'); }} className="w-full py-2 bg-sky-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all">Muat Antarmuka (Offline)</button>
                             </div>
                         </div>
                     )}
@@ -297,35 +299,33 @@
 
             return (
                 <div className="min-h-screen flex flex-col text-slate-800 selection:bg-sky-200">
-                    {/* NAV BAR */}
                     <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-4 h-20 shadow-sm">
                         <div className="max-w-6xl mx-auto h-full flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <div className="bg-sky-600 p-2.5 rounded-2xl text-white shadow-lg shadow-sky-100 transition-transform hover:scale-105"><Icon name="plane" size={24}/></div>
                                 <div className="flex flex-col">
-                                    <span className="font-black text-xl leading-none tracking-tighter text-slate-900 uppercase">404 NotFound</span>
+                                    <span className="font-bold text-xl leading-none tracking-tighter text-slate-900 uppercase">404 NotFound</span>
                                     <span className="text-[9px] font-bold text-sky-600 tracking-[0.1em] uppercase">Member of Infinite Sky Legion</span>
                                 </div>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 items-center">
                                 {isCEO && <NavTab active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon="layout-dashboard" label="Stats" />}
                                 <NavTab active={activeTab === 'katalog'} onClick={() => setActiveTab('katalog')} icon="list" label="Armada" />
-                                <a href={ISL_FORM_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-3 rounded-2xl font-black text-[10px] tracking-widest bg-amber-500 text-white shadow-lg shadow-amber-100 hover:scale-105 active:scale-95 transition-all">
+                                <a href={ISL_FORM_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 sm:px-5 py-3 rounded-2xl font-bold text-[10px] tracking-widest bg-amber-500 text-white shadow-lg shadow-amber-100 hover:scale-105 active:scale-95 transition-all">
                                     <Icon name="external-link" size={18} /> 
-                                    <span className="hidden md:inline uppercase">Request Connection Here!</span>
-                                    <span className="md:hidden uppercase font-bold text-[9px]">Request!</span>
+                                    <span className="hidden sm:inline uppercase">Request Connection Here!</span>
+                                    <span className="sm:hidden uppercase font-bold text-[9px]">Request!</span>
                                 </a>
                             </div>
                         </div>
                     </nav>
 
                     <main className="max-w-6xl mx-auto p-4 py-8 flex-grow w-full">
-                        {/* VIEW: DASHBOARD */}
                         {activeTab === 'dashboard' && isCEO && (
                             <div className="animate-fade space-y-8">
                                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                                    <h1 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Dashboard CEO</h1>
-                                    <button onClick={() => setIsModalOpen(true)} className="bg-sky-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:scale-105 transition-all uppercase text-xs tracking-widest">
+                                    <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">Dashboard CEO</h2>
+                                    <button onClick={() => setIsModalOpen(true)} className="bg-sky-600 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg hover:scale-105 transition-all uppercase text-xs tracking-widest">
                                         <Icon name="plus-circle" size={18} className="mr-2 inline-block" /> Daftarkan Unit
                                     </button>
                                 </div>
@@ -342,13 +342,12 @@
                             </div>
                         )}
 
-                        {/* VIEW: KATALOG */}
                         {activeTab === 'katalog' && (
                             <div className="animate-fade space-y-8">
                                 <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
                                     <div className="space-y-1">
-                                        <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Fleet Information</h2>
-                                        <p className="text-slate-500 text-sm">Informasi armada resmi ISL〆404 di Hub utama.</p>
+                                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight uppercase">Fleet Information</h2>
+                                        <p className="text-slate-500 text-sm">Informasi armada resmi ISL〆404 yang tersedia di pangkalan Hub kami.</p>
                                     </div>
                                     <div className="flex flex-col gap-3 items-center md:items-end">
                                         <div className="flex flex-wrap gap-1.5 justify-center md:justify-end">
@@ -357,9 +356,9 @@
                                         </div>
                                         <div className="flex gap-1.5 items-center">
                                             <FilterBtn active={filterSize === 'All'} onClick={() => setFilterSize('All')} label="ALL SIZE" />
-                                            <select value={filterSize === 'All' ? '' : filterSize} onChange={(e) => setFilterSize(e.target.value)} className="custom-select px-4 py-1.5 rounded-lg text-[9px] font-black tracking-widest outline-none border bg-white text-slate-400 border-slate-200 hover:border-sky-300">
+                                            <select value={filterSize === 'All' ? '' : filterSize} onChange={(e) => setFilterSize(e.target.value)} className="custom-select px-4 py-1.5 rounded-lg text-[9px] font-bold tracking-widest outline-none border bg-white text-slate-400 border-slate-200 hover:border-sky-300">
                                                 <option value="" disabled hidden>TYPE</option>
-                                                {['A', 'B', 'C', 'D', 'E', 'F'].map(s => <option key={s} value={s} className="text-slate-800">TYPE {s}</option>)}
+                                                {['A', 'B', 'C', 'D', 'E', 'F'].map(s => <option key={s} value={s} className="text-slate-800 font-bold">TYPE {s}</option>)}
                                             </select>
                                         </div>
                                     </div>
@@ -376,27 +375,27 @@
                                             <div className="p-8 flex-grow">
                                                 <div className="flex justify-between items-start mb-6">
                                                     <div>
-                                                        <span className="font-mono font-black text-2xl text-slate-900 block tracking-tighter uppercase">{p.reg}</span>
-                                                        <div className="flex items-center gap-2 mt-1 font-bold">
-                                                            <p className="text-[10px] text-slate-400 uppercase tracking-widest">{p.manufacturer}</p>
-                                                            <span className={`px-2 py-0.5 rounded text-[8px] uppercase tracking-widest ${p.fleetType === 'Cargo' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{p.fleetType}</span>
+                                                        <span className="font-mono font-bold text-2xl text-slate-900 block tracking-tighter uppercase">{p.reg}</span>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">{p.manufacturer}</p>
+                                                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest ${p.fleetType === 'Cargo' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{p.fleetType}</span>
                                                         </div>
                                                     </div>
-                                                    <span className="text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-tighter shadow-sm bg-slate-100 text-slate-600 border border-slate-200 font-bold">Type {p.cat}</span>
+                                                    <span className="text-[9px] font-bold px-3 py-1.5 rounded-xl uppercase tracking-tighter shadow-sm bg-slate-100 text-slate-600 border border-slate-200">Type {p.cat}</span>
                                                 </div>
-                                                <h4 className="font-extrabold text-slate-800 text-lg mb-1">{p.type}</h4>
-                                                <div className="mt-4 grid grid-cols-2 gap-3 text-center font-bold text-xs">
+                                                <h4 className="font-bold text-slate-800 text-lg mb-1">{p.type}</h4>
+                                                <div className="mt-4 grid grid-cols-2 gap-3 text-center">
                                                     <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-1 items-center">
-                                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Hub Basis</span>
+                                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Hub Basis</span>
                                                         <div className="flex items-center justify-center gap-1.5">
-                                                            <span>{HUB_DATA.find(h => h.id === p.hub)?.flag || '📍'}</span>
-                                                            <span className="uppercase">{p.hub}</span>
+                                                            <span className="text-xs">{HUB_DATA.find(h => h.id === p.hub)?.flag || '📍'}</span>
+                                                            <span className="text-xs font-bold text-slate-700 uppercase">{p.hub}</span>
                                                         </div>
                                                     </div>
                                                     <button onClick={() => handleToggleStatus(p.id, p.status)} disabled={!isCEO} className={`p-3 rounded-2xl border border-slate-100 flex flex-col gap-1 transition-all items-center ${isCEO ? 'hover:bg-slate-100 cursor-pointer active:scale-95' : 'bg-slate-50 cursor-default'}`}>
-                                                        <span className="text-[8px] text-slate-400 uppercase tracking-widest uppercase">Status Op</span>
-                                                        <div className="flex items-center justify-center gap-1.5 text-[10px] uppercase">
-                                                            <div className={`w-2 h-2 rounded-full ${p.status === 'Kerja' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Status Op</span>
+                                                        <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase">
+                                                            <div className={`w-2.5 h-2.5 rounded-full ${p.status === 'Kerja' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
                                                             {p.status}
                                                         </div>
                                                     </button>
@@ -405,7 +404,7 @@
                                             <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-between items-center px-8">
                                                 <div className="flex items-center gap-2">
                                                     <Icon name="navigation-2" size={12} className="text-slate-400" />
-                                                    <span className="text-[10px] font-black text-slate-500 uppercase font-bold">Range: {(p.range || 0).toLocaleString()} NM</span>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Range: {(p.range || 0).toLocaleString()} NM</span>
                                                 </div>
                                                 {isCEO && <button onClick={() => { setPlaneToDelete(p.id); setIsDeleteModalOpen(true); }} className="text-slate-300 hover:text-red-500 p-2 transition-colors cursor-pointer"><Icon name="trash-2" size={20} /></button>}
                                             </div>
@@ -417,8 +416,8 @@
                     </main>
 
                     <footer className="py-14 text-center border-t border-slate-100 mt-auto bg-white/50">
-                        {!isCEO ? <button onClick={() => setIsLoginModalOpen(true)} className="text-slate-300 hover:text-sky-400 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center justify-center gap-3 mx-auto cursor-pointer font-black"><Icon name="lock" size={12}/> CEO 404 Access</button> : <button onClick={() => setIsCEO(false)} className="text-red-300 hover:text-red-500 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center gap-3 mx-auto cursor-pointer font-black"><Icon name="log-out" size={12}/> Keluar</button>}
-                        <p className="text-[9px] text-slate-300 font-black uppercase tracking-[0.6em] mt-8">404 NotFound &copy; 2026 • Member of Infinite Sky Legion</p>
+                        {!isCEO ? <button onClick={() => setIsLoginModalOpen(true)} className="text-slate-300 hover:text-sky-400 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center justify-center gap-3 mx-auto cursor-pointer"><Icon name="lock" size={12}/> CEO 404 Access</button> : <button onClick={() => setIsCEO(false)} className="text-red-300 hover:text-red-500 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center gap-3 mx-auto cursor-pointer"><Icon name="log-out" size={12}/> Keluar</button>}
+                        <p className="text-[9px] text-slate-300 font-bold uppercase tracking-[0.6em] mt-8">404 NotFound &copy; 2026 • Infinite Sky Legion Member</p>
                     </footer>
 
                     {toast.visible && <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 font-bold text-sm bg-slate-900 text-white animate-fade"><Icon name="check-circle" size={18} />{toast.message}</div>}
@@ -426,12 +425,12 @@
                     {isLoginModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
                             <form onSubmit={handleLogin} className={`bg-white rounded-[3rem] p-12 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/50 ${isShaking ? 'shake' : ''}`}>
-                                <h3 className="text-xl font-black text-slate-800 mb-4 uppercase">Otentikasi CEO</h3>
-                                <div className="relative mb-8">
-                                    <input name="code" type="password" placeholder="••••••" maxLength="6" disabled={cooldownTime > 0} className="w-full bg-slate-50 p-6 rounded-[1.5rem] text-center text-3xl font-black tracking-[0.6em] outline-none focus:ring-2 focus:ring-sky-500 shadow-inner" required autoFocus />
+                                <h3 className="text-xl font-bold text-slate-800 mb-2 uppercase">Otentikasi CEO</h3>
+                                <div className="relative mb-8 text-center items-center">
+                                    <input name="code" type="password" placeholder="••••••" maxLength="6" disabled={cooldownTime > 0} className="w-full bg-slate-50 p-6 rounded-[1.5rem] text-center text-3xl font-bold tracking-[0.6em] outline-none focus:ring-2 focus:ring-sky-500 shadow-inner" required autoFocus />
                                     {loginError && <p className="text-red-500 text-[10px] font-bold uppercase mt-3 tracking-widest">{loginError}</p>}
                                 </div>
-                                <button type="submit" disabled={cooldownTime > 0} className="w-full py-5 rounded-[1.3rem] font-black shadow-xl uppercase tracking-widest text-xs bg-sky-600 text-white active:scale-95 transition-all">{cooldownTime > 0 ? `Terkunci (${cooldownTime}s)` : 'Akses Sistem'}</button>
+                                <button type="submit" disabled={cooldownTime > 0} className="w-full py-5 rounded-[1.3rem] font-bold shadow-xl transition-all active:scale-95 uppercase tracking-[0.2em] text-xs bg-sky-600 text-white">{cooldownTime > 0 ? `Terkunci (${cooldownTime}s)` : 'Akses Sistem'}</button>
                                 <button type="button" onClick={() => setIsLoginModalOpen(false)} className="w-full mt-4 text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-slate-600 transition-colors">Batalkan</button>
                             </form>
                         </div>
@@ -441,18 +440,18 @@
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto">
                             <form onSubmit={handleAddPlane} className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-lg p-10 animate-fade my-auto relative">
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-500"><Icon name="x" size={24} /></button>
-                                <h3 className="text-2xl font-black mb-8 text-center uppercase">Daftar Unit 〆404</h3>
+                                <h3 className="text-2xl font-bold mb-8 text-center uppercase tracking-tight">Daftar Unit 〆404</h3>
                                 <div className="grid grid-cols-2 gap-4 text-sm font-bold">
                                     <div className="space-y-1"><label className="text-[10px] text-slate-400 uppercase">Reg Unit</label><input name="reg" required placeholder="PK-404" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 uppercase" /></div>
                                     <div className="space-y-1"><label className="text-[10px] text-slate-400 uppercase">Model Pesawat</label><input name="type" required placeholder="B77W / A359" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500" /></div>
                                     <div className="space-y-1"><label className="text-[10px] text-slate-400 uppercase">Layanan</label><select name="fleetType" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer"><option value="Pax">Pax</option><option value="Cargo">Cargo</option></select></div>
                                     <div className="space-y-1"><label className="text-[10px] text-slate-400 uppercase">Size</label><select name="cat" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer">{['S', 'M', 'L', 'XL', 'A', 'B', 'C', 'D', 'E', 'F'].map(c => <option key={c} value={c}>Type {c}</option>)}</select></div>
-                                    <div className="space-y-1"><label className="text-[10px] text-slate-400 uppercase">Hub Basis</label><select name="hub" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer">{HUB_DATA.map(h => <option key={h.id} value={h.id}>{h.id}</option>)}</select></div>
+                                    <div className="space-y-1"><label className="text-[10px] text-slate-400 uppercase">Hub Basis</label><select name="hub" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold">{HUB_DATA.map(h => <option key={h.id} value={h.id}>{h.id}</option>)}</select></div>
                                     <div className="space-y-1"><label className="text-[10px] text-slate-400 uppercase">Range (NM)</label><input name="range" type="number" required placeholder="7000" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500" /></div>
                                     <div className="col-span-2 space-y-1"><label className="text-[10px] text-slate-400 uppercase">Manufaktur</label><select name="manufacturer" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer"><option value="Airbus">Airbus</option><option value="Boeing">Boeing</option><option value="Other">Lainnya</option></select></div>
                                     <div className="col-span-2 space-y-1"><label className="text-[10px] text-slate-400 uppercase">Status</label><select name="status" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold"><option value="Kerja">Kerja</option><option value="Nganggur">Nganggur</option></select></div>
                                 </div>
-                                <button type="submit" className="w-full bg-sky-600 text-white py-5 rounded-2xl font-black shadow-xl mt-8 uppercase tracking-widest text-sm transition-all active:scale-95">Simpan Unit</button>
+                                <button type="submit" className="w-full bg-sky-600 text-white py-5 rounded-2xl font-bold shadow-xl mt-8 uppercase tracking-widest text-sm active:scale-95 transition-all">Simpan Unit</button>
                             </form>
                         </div>
                     )}
@@ -460,11 +459,11 @@
                     {isDeleteModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
                             <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/20">
-                                <h3 className="text-xl font-black mb-4 uppercase">Konfirmasi Hapus</h3>
+                                <h3 className="text-xl font-bold mb-4 uppercase">Konfirmasi Hapus</h3>
                                 <p className="text-sm text-slate-500 mb-8 font-bold">Hapus unit ini selamanya?</p>
                                 <div className="flex flex-col gap-3">
-                                    <button onClick={confirmDelete} className="w-full bg-red-500 text-white py-4 rounded-xl font-black uppercase text-xs transition-all active:scale-95">Hapus Sekarang</button>
-                                    <button onClick={() => setIsDeleteModalOpen(false)} className="w-full bg-slate-100 text-slate-500 py-4 rounded-xl font-black uppercase text-xs">Batalkan</button>
+                                    <button onClick={confirmDelete} className="w-full bg-red-500 text-white py-4 rounded-xl font-bold uppercase text-xs active:scale-95 transition-all">Hapus Sekarang</button>
+                                    <button onClick={() => setIsDeleteModalOpen(false)} className="w-full bg-slate-100 text-slate-500 py-4 rounded-xl font-bold uppercase text-xs">Batalkan</button>
                                 </div>
                             </div>
                         </div>
@@ -474,20 +473,20 @@
         }
 
         const NavTab = ({ active, onClick, icon, label }) => (
-            <button onClick={onClick} className={`relative flex items-center gap-2 px-4 sm:px-7 py-3.5 rounded-2xl font-black text-[10px] sm:text-[11px] tracking-widest transition-all cursor-pointer ${active ? 'bg-sky-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-100'}`}>
-                <Icon name={icon} size={18} /> <span className="hidden md:inline uppercase ml-1">{label}</span>
+            <button onClick={onClick} className={`relative flex items-center gap-2 px-4 sm:px-7 py-3.5 rounded-2xl font-bold text-[10px] sm:text-[11px] tracking-widest transition-all cursor-pointer ${active ? 'bg-sky-600 text-white shadow-lg shadow-sky-200' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}>
+                <Icon name={icon} size={18} /> <span className="hidden md:inline uppercase ml-1 font-bold">{label}</span>
             </button>
         );
 
         const FilterBtn = ({ active, onClick, label }) => (
-            <button onClick={onClick} className={`px-4 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all cursor-pointer ${active ? 'bg-sky-600 text-white shadow-sm' : 'bg-white text-slate-400 border border-slate-200'}`}>{label}</button>
+            <button onClick={onClick} className={`px-4 py-1.5 rounded-lg text-[9px] font-bold tracking-widest transition-all cursor-pointer ${active ? 'bg-sky-600 text-white shadow-sm font-bold' : 'bg-white text-slate-400 border border-slate-200 hover:border-sky-300'}`}>{label}</button>
         );
 
         const StatCard = ({ label, value, icon, color, bg }) => (
-            <div className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all hover:shadow-md hover:-translate-y-1">
-                <div className={`w-14 h-14 ${bg} ${color} rounded-[1.4rem] flex items-center justify-center mb-6 shadow-sm shadow-black/5 mx-auto`}>{icon}</div>
-                <div className="text-3xl font-black text-slate-900 tracking-tighter text-center">{value}</div>
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2 text-center">{label}</div>
+            <div className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all hover:shadow-md hover:-translate-y-1 text-center font-bold">
+                <div className={`w-14 h-14 ${bg} ${color} rounded-[1.4rem] flex items-center justify-center mb-6 shadow-sm shadow-black/5 mx-auto font-bold`}>{icon}</div>
+                <div className="text-3xl font-bold text-slate-900 tracking-tighter text-center">{value}</div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center font-bold">{label}</div>
             </div>
         );
 
