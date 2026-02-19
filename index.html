@@ -36,8 +36,6 @@
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .card-hover:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); }
-        .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes shake { 10%, 90% { transform: translate3d(-1px, 0, 0); } 20%, 80% { transform: translate3d(2px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-4px, 0, 0); } 40%, 60% { transform: translate3d(4px, 0, 0); } }
         
         .custom-select {
             -webkit-appearance: none;
@@ -78,7 +76,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // ID Aplikasi tetap untuk konsistensi database
+        // Gunakan ID dinamis agar sinkron dengan aturan wildcard di Firestore
         const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : "isl-404-notfound-hub"; 
         const ADMIN_CODE = "123456"; 
         
@@ -111,7 +109,7 @@
             const [fleet, setFleet] = useState([]);
             const [activeTab, setActiveTab] = useState('katalog'); 
             const [isCEO, setIsCEO] = useState(false); 
-            const [isInitialSyncing, setIsInitialSyncing] = useState(true);
+            const [isSyncing, setIsSyncing] = useState(true);
 
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -122,7 +120,6 @@
             const [loginError, setLoginError] = useState("");
             const [attempts, setAttempts] = useState(0);
             const [cooldownTime, setCooldownTime] = useState(0);
-            const [isShaking, setIsShaking] = useState(false);
 
             const [searchQuery, setSearchQuery] = useState('');
             const [filterSize, setFilterSize] = useState('All');
@@ -139,7 +136,7 @@
                 return () => clearInterval(timer);
             }, [cooldownTime]);
 
-            // TAHAP 1: Autentikasi HARUS selesai sebelum kueri (Wajib Rule 3)
+            // TAHAP 1: Autentikasi Latar Belakang
             useEffect(() => {
                 const initAuth = async () => {
                     try {
@@ -148,10 +145,7 @@
                         } else {
                             await signInAnonymously(auth);
                         }
-                    } catch (e) { 
-                        console.error("Auth Error:", e);
-                        showToast("Radar gagal terhubung ke server.", "error");
-                    }
+                    } catch (e) { console.error("Auth Error:", e); }
                 };
                 initAuth();
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -160,26 +154,25 @@
                 return () => unsubscribe();
             }, []);
 
-            // TAHAP 2: Ambil Data hanya jika status user sudah valid (Wajib Rule 3)
+            // TAHAP 2: Sinkronisasi Data Firestore (Rule 3: Tunggu User)
             useEffect(() => {
                 if (!user) return;
                 
                 const fleetCol = collection(db, 'artifacts', appId, 'public', 'data', 'fleet');
-                
                 const unsubFleet = onSnapshot(fleetCol, (snap) => {
                     setFleet(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                    setIsInitialSyncing(false);
+                    setIsSyncing(false);
                 }, (err) => { 
                     console.error("Firestore error:", err); 
                     if (err.code === 'permission-denied') {
-                        showToast("Akses ditolak. Periksa Authorized Domains Firebase!", "error");
+                        showToast("Akses Firestore ditolak. Pastikan Rules sudah dipublikasikan.", "error");
                     }
-                    setIsInitialSyncing(false);
+                    setIsSyncing(false);
                 });
-                
                 return () => unsubFleet();
             }, [user]);
 
+            // Chart Dashboard
             const chartRef = useRef(null);
             useEffect(() => {
                 if (activeTab === 'dashboard' && isCEO && fleet.length > 0) {
@@ -207,7 +200,7 @@
             const handleAddPlane = async (e) => {
                 e.preventDefault();
                 const fd = new FormData(e.target);
-                if (!user) return showToast("Menunggu koneksi radar...", "error");
+                if (!user) return showToast("Menghubungkan ke satelit...", "error");
                 try {
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'fleet'), {
                         reg: fd.get('reg'), type: fd.get('type'), manufacturer: fd.get('manufacturer'),
@@ -216,7 +209,7 @@
                         ownerId: user.uid, createdAt: new Date().toISOString()
                     });
                     setIsModalOpen(false);
-                    showToast("Unit armada berhasil disimpan!", "success");
+                    showToast("Unit armada terdaftar!", "success");
                 } catch (err) { showToast("Gagal menyimpan data.", "error"); }
             };
 
@@ -234,7 +227,7 @@
                 try {
                     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'fleet', planeToDelete));
                     setIsDeleteModalOpen(false); setPlaneToDelete(null);
-                    showToast("Unit berhasil dihapus.");
+                    showToast("Unit dihapus.");
                 } catch (err) { console.error(err); }
             };
 
@@ -243,12 +236,11 @@
                 if (cooldownTime > 0) return;
                 if (e.target.code.value === ADMIN_CODE) {
                     setIsCEO(true); setIsLoginModalOpen(false); setActiveTab('dashboard'); setLoginError(""); setAttempts(0);
-                    showToast("Halo CEO!", "success");
+                    showToast("Selamat datang, CEO!", "success");
                 } else { 
                     const next = attempts + 1;
                     if (next >= 3) { setLoginError("Akses ditolak!"); setCooldownTime(60); setAttempts(0); }
                     else { setLoginError(`Kode salah! Sisa: ${3 - next}`); setAttempts(next); }
-                    setIsShaking(true); setTimeout(() => setIsShaking(false), 500);
                 }
                 e.target.code.value = "";
             };
@@ -262,14 +254,14 @@
 
             return (
                 <div className="min-h-screen flex flex-col text-slate-800 selection:bg-sky-200">
-                    {/* TOP NAVIGATION */}
-                    <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-4 h-20 shadow-sm font-bold">
-                        <div className="max-w-6xl mx-auto h-full flex items-center justify-between">
+                    {/* NAV BAR */}
+                    <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-4 h-20 shadow-sm">
+                        <div className="max-w-6xl mx-auto h-full flex items-center justify-between font-bold">
                             <div className="flex items-center gap-3">
-                                <div className="bg-sky-600 p-2.5 rounded-2xl text-white shadow-lg shadow-sky-100"><Icon name="plane" size={24}/></div>
+                                <div className="bg-sky-600 p-2.5 rounded-2xl text-white shadow-lg"><Icon name="plane" size={24}/></div>
                                 <div className="flex flex-col">
                                     <span className="font-extrabold text-xl leading-none tracking-tighter text-slate-900 uppercase">404 NotFound</span>
-                                    <span className="text-[9px] font-bold text-sky-600 tracking-[0.1em] uppercase">Member of Infinite Sky Legion</span>
+                                    <span className="text-[9px] font-bold text-sky-600 tracking-[0.1em] uppercase mt-1">Member of Infinite Sky Legion</span>
                                 </div>
                             </div>
                             <div className="flex gap-2 items-center">
@@ -284,7 +276,8 @@
                         </div>
                     </nav>
 
-                    <main className="max-w-6xl mx-auto p-4 py-8 flex-grow w-full">
+                    <main className="max-w-6xl mx-auto p-4 py-8 flex-grow w-full font-bold">
+                        {/* VIEW: DASHBOARD (CEO Only) */}
                         {activeTab === 'dashboard' && isCEO && (
                             <div className="animate-fade space-y-8">
                                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -300,18 +293,19 @@
                                     <StatCard label="Nganggur" value={fleet.filter(p => p.status === 'Nganggur').length} icon={<Icon name="clock" size={24}/>} color="text-amber-600" bg="bg-amber-50" />
                                 </div>
                                 <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                                    <h3 className="font-bold text-slate-800 mb-8 uppercase tracking-tighter font-bold"><span className="w-1.5 h-6 bg-sky-500 rounded-full inline-block mr-2 align-middle font-bold"></span> Komposisi Armada</h3>
+                                    <h3 className="font-bold text-slate-800 mb-8 uppercase tracking-tighter"><span className="w-1.5 h-6 bg-sky-500 rounded-full inline-block mr-2 align-middle"></span> Komposisi Armada</h3>
                                     <div className="chart-container"><canvas id="fleetChart"></canvas></div>
                                 </div>
                             </div>
                         )}
 
+                        {/* VIEW: KATALOG */}
                         {activeTab === 'katalog' && (
                             <div className="animate-fade space-y-8">
                                 <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
                                     <div className="space-y-1">
-                                        <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Fleet Information</h2>
-                                        <p className="text-slate-500 text-sm font-medium font-bold">Informasi armada resmi ISL〆404 di Hub utama.</p>
+                                        <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase font-black">Fleet Information</h2>
+                                        <p className="text-slate-500 text-sm font-medium">Informasi armada resmi ISL〆404 di pangkalan Hub kami.</p>
                                     </div>
                                     <div className="flex flex-col gap-3 items-center md:items-end">
                                         <div className="flex flex-wrap gap-1.5 justify-center md:justify-end">
@@ -320,9 +314,9 @@
                                         </div>
                                         <div className="flex gap-1.5 items-center">
                                             <FilterBtn active={filterSize === 'All'} onClick={() => setFilterSize('All')} label="ALL SIZE" />
-                                            <select value={filterSize === 'All' ? '' : filterSize} onChange={(e) => setFilterSize(e.target.value)} className="custom-select px-4 py-1.5 rounded-lg text-[9px] font-bold tracking-widest outline-none border bg-white text-slate-400 border-slate-200 hover:border-sky-300 font-bold font-bold">
+                                            <select value={filterSize === 'All' ? '' : filterSize} onChange={(e) => setFilterSize(e.target.value)} className="custom-select px-4 py-1.5 rounded-lg text-[9px] font-bold tracking-widest outline-none border bg-white text-slate-400 border-slate-200 hover:border-sky-300">
                                                 <option value="" disabled hidden>TYPE</option>
-                                                {['A', 'B', 'C', 'D', 'E', 'F'].map(s => <option key={s} value={s} className="text-slate-800 font-bold font-bold">TYPE {s}</option>)}
+                                                {['A', 'B', 'C', 'D', 'E', 'F'].map(s => <option key={s} value={s}>TYPE {s}</option>)}
                                             </select>
                                         </div>
                                     </div>
@@ -330,11 +324,11 @@
 
                                 <div className="relative group">
                                     <div className="absolute inset-y-0 left-0 pl-5 flex items-center text-slate-400 group-focus-within:text-sky-500 transition-colors"><Icon name="search" size={18} /></div>
-                                    <input type="text" placeholder="Cari armada (Reg/Model)..." className="w-full bg-white border border-slate-200 rounded-[1.5rem] py-5 pl-14 pr-6 focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 outline-none transition-all shadow-sm font-medium font-bold" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                                    <input type="text" placeholder="Cari armada (Reg/Model)..." className="w-full bg-white border border-slate-200 rounded-[1.5rem] py-5 pl-14 pr-6 focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 outline-none transition-all shadow-sm font-medium" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                                 </div>
 
-                                {isInitialSyncing ? (
-                                    <div className="py-20 text-center text-slate-400 animate-pulse font-bold">Menghubungkan radar armada...</div>
+                                {isSyncing ? (
+                                    <div className="py-20 text-center text-slate-400 animate-pulse font-bold">Sinkronisasi radar armada...</div>
                                 ) : (
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                         {filteredFleet.map(p => (
@@ -342,38 +336,38 @@
                                                 <div className="p-8 flex-grow">
                                                     <div className="flex justify-between items-start mb-6">
                                                         <div>
-                                                            <span className="font-mono font-bold text-2xl text-slate-900 block tracking-tighter uppercase font-bold font-bold">{p.reg}</span>
+                                                            <span className="font-mono font-bold text-2xl text-slate-900 block tracking-tighter uppercase">{p.reg}</span>
                                                             <div className="flex items-center gap-2 mt-1 font-bold">
-                                                                <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold font-bold font-bold">{p.manufacturer}</p>
-                                                                <span className={`px-2 py-0.5 rounded text-[8px] uppercase tracking-widest font-bold font-bold ${p.fleetType === 'Cargo' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{p.fleetType}</span>
+                                                                <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">{p.manufacturer}</p>
+                                                                <span className={`px-2 py-0.5 rounded text-[8px] uppercase tracking-widest ${p.fleetType === 'Cargo' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{p.fleetType}</span>
                                                             </div>
                                                         </div>
-                                                        <span className="text-[9px] font-bold px-3 py-1.5 rounded-xl uppercase tracking-tighter shadow-sm bg-slate-100 text-slate-600 border border-slate-200 font-bold font-bold">Type {p.cat}</span>
+                                                        <span className="text-[9px] font-bold px-3 py-1.5 rounded-xl uppercase tracking-tighter shadow-sm bg-slate-100 text-slate-600 border border-slate-200">Type {p.cat}</span>
                                                     </div>
-                                                    <h4 className="font-bold text-slate-800 text-lg mb-1 font-bold font-bold">{p.type}</h4>
+                                                    <h4 className="font-bold text-slate-800 text-lg mb-1">{p.type}</h4>
                                                     <div className="mt-4 grid grid-cols-2 gap-3 text-center">
                                                         <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-1 items-center">
-                                                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest font-bold font-bold">Hub Basis</span>
-                                                            <div className="flex items-center justify-center gap-1.5 font-bold font-bold">
+                                                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Hub Basis</span>
+                                                            <div className="flex items-center justify-center gap-1.5">
                                                                 <span>{HUB_DATA.find(h => h.id === p.hub)?.flag || '📍'}</span>
                                                                 <span className="text-xs text-slate-700 uppercase">{p.hub}</span>
                                                             </div>
                                                         </div>
-                                                        <button onClick={() => handleToggleStatus(p.id, p.status)} disabled={!isCEO} className={`p-3 rounded-2xl border border-slate-100 flex flex-col gap-1 transition-all items-center font-bold ${isCEO ? 'hover:bg-slate-100 cursor-pointer active:scale-95' : 'bg-slate-50 cursor-default'}`}>
-                                                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest font-bold font-bold">Status Op</span>
-                                                            <div className="flex items-center justify-center gap-1.5 text-[10px] uppercase font-bold font-bold">
-                                                                <div className={`w-2.5 h-2.5 rounded-full ${p.status === 'Kerja' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                                                        <button onClick={() => handleToggleStatus(p.id, p.status)} disabled={!isCEO} className={`p-3 rounded-2xl border border-slate-100 flex flex-col gap-1 transition-all items-center ${isCEO ? 'hover:bg-slate-100 cursor-pointer active:scale-95' : 'bg-slate-50 cursor-default'}`}>
+                                                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Status Op</span>
+                                                            <div className="flex items-center justify-center gap-1.5 text-[10px] uppercase font-bold">
+                                                                <div className={`w-2 h-2 rounded-full ${p.status === 'Kerja' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
                                                                 {p.status}
                                                             </div>
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-between items-center px-8 font-bold font-bold">
+                                                <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-between items-center px-8">
                                                     <div className="flex items-center gap-2">
-                                                        <Icon name="navigation-2" size={12} className="text-slate-400 font-bold" />
-                                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight font-bold font-bold font-bold">Range: {(p.range || 0).toLocaleString()} NM</span>
+                                                        <Icon name="navigation-2" size={12} className="text-slate-400" />
+                                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Range: {(p.range || 0).toLocaleString()} NM</span>
                                                     </div>
-                                                    {isCEO && <button onClick={() => { setPlaneToDelete(p.id); setIsDeleteModalOpen(true); }} className="text-slate-300 hover:text-red-500 p-2 transition-colors cursor-pointer font-bold font-bold"><Icon name="trash-2" size={20} /></button>}
+                                                    {isCEO && <button onClick={() => { setPlaneToDelete(p.id); setIsDeleteModalOpen(true); }} className="text-slate-300 hover:text-red-500 p-2 transition-colors cursor-pointer"><Icon name="trash-2" size={20} /></button>}
                                                 </div>
                                             </div>
                                         ))}
@@ -383,46 +377,42 @@
                         )}
                     </main>
 
+                    {/* FOOTER */}
                     <footer className="py-14 text-center border-t border-slate-100 mt-auto bg-white/50 font-bold">
-                        {!isCEO ? <button onClick={() => setIsLoginModalOpen(true)} className="text-slate-300 hover:text-sky-400 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center justify-center gap-3 mx-auto cursor-pointer font-bold"><Icon name="lock" size={12}/> CEO 404 Access</button> : <button onClick={() => setIsCEO(false)} className="text-red-300 hover:text-red-500 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center gap-3 mx-auto cursor-pointer font-bold"><Icon name="log-out" size={12}/> Keluar</button>}
-                        <p className="text-[9px] text-slate-300 font-bold uppercase tracking-[0.6em] mt-8 font-bold">404 NotFound &copy; 2026 • Infinite Sky Legion Member</p>
+                        {!isCEO ? <button onClick={() => setIsLoginModalOpen(true)} className="text-slate-300 hover:text-sky-400 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center justify-center gap-3 mx-auto cursor-pointer"><Icon name="lock" size={12}/> CEO 404 Access</button> : <button onClick={() => setIsCEO(false)} className="text-red-300 hover:text-red-500 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center gap-3 mx-auto cursor-pointer"><Icon name="log-out" size={12}/> Keluar</button>}
+                        <p className="text-[9px] text-slate-300 font-bold uppercase tracking-[0.6em] mt-8">404 NotFound &copy; 2026 • Infinite Sky Legion Member</p>
                     </footer>
 
-                    {toast.visible && (
-                        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 font-bold text-sm text-white animate-fade ${toast.type === 'error' ? 'bg-red-600 font-bold' : 'bg-slate-900 font-bold'}`}>
-                            <Icon name={toast.type === 'error' ? 'alert-circle' : 'check-circle'} size={18} />
-                            {toast.message}
-                        </div>
-                    )}
+                    {toast.visible && <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 font-bold text-sm text-white animate-fade ${toast.type === 'error' ? 'bg-red-600' : 'bg-slate-900'}`}><Icon name={toast.type === 'error' ? 'alert-circle' : 'check-circle'} size={18} />{toast.message}</div>}
 
                     {isLoginModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                            <form onSubmit={handleLogin} className={`bg-white rounded-[3rem] p-12 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/50 font-bold ${isShaking ? 'shake' : ''}`}>
-                                <h3 className="text-xl font-bold text-slate-800 mb-2 uppercase font-bold font-bold font-bold">Otentikasi CEO</h3>
-                                <div className="relative mb-8 text-center items-center font-bold">
-                                    <input name="code" type="password" placeholder="••••••" maxLength="6" disabled={cooldownTime > 0} className="w-full bg-slate-50 p-6 rounded-[1.5rem] text-center text-3xl font-bold tracking-[0.6em] outline-none focus:ring-2 focus:ring-sky-500 shadow-inner font-bold" required autoFocus />
-                                    {loginError && <p className="text-red-500 text-[10px] font-bold uppercase mt-3 tracking-widest font-bold">{loginError}</p>}
+                            <form onSubmit={handleLogin} className="bg-white rounded-[3rem] p-12 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/50">
+                                <h3 className="text-xl font-bold text-slate-800 mb-2 uppercase">Otentikasi CEO</h3>
+                                <div className="relative mb-8 text-center items-center">
+                                    <input name="code" type="password" placeholder="••••••" maxLength="6" disabled={cooldownTime > 0} className="w-full bg-slate-50 p-6 rounded-[1.5rem] text-center text-3xl font-bold tracking-[0.6em] outline-none focus:ring-2 focus:ring-sky-500 shadow-inner" required autoFocus />
+                                    {loginError && <p className="text-red-500 text-[10px] font-bold uppercase mt-3 tracking-widest">{loginError}</p>}
                                 </div>
-                                <button type="submit" disabled={cooldownTime > 0} className="w-full py-5 rounded-[1.3rem] font-bold shadow-xl transition-all active:scale-95 uppercase tracking-[0.2em] text-xs bg-sky-600 text-white font-bold font-bold">{cooldownTime > 0 ? `Terkunci (${cooldownTime}s)` : 'Akses Sistem'}</button>
-                                <button type="button" onClick={() => setIsLoginModalOpen(false)} className="w-full mt-4 text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-slate-600 transition-colors font-bold font-bold">Batalkan</button>
+                                <button type="submit" disabled={cooldownTime > 0} className="w-full py-5 rounded-[1.3rem] font-bold shadow-xl transition-all active:scale-95 uppercase tracking-[0.2em] text-xs bg-sky-600 text-white">{cooldownTime > 0 ? `Terkunci (${cooldownTime}s)` : 'Akses Sistem'}</button>
+                                <button type="button" onClick={() => setIsLoginModalOpen(false)} className="w-full mt-4 text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-slate-600 transition-colors">Batalkan</button>
                             </form>
                         </div>
                     )}
 
                     {isModalOpen && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto font-bold">
-                            <form onSubmit={handleAddPlane} className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-lg p-10 animate-fade my-auto relative font-bold">
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-500 font-bold font-bold font-bold font-bold font-bold"><Icon name="x" size={24} /></button>
-                                <h3 className="text-2xl font-bold mb-8 text-center uppercase tracking-tight font-bold font-bold font-bold font-bold font-bold font-bold">Registrasi Unit 〆404</h3>
-                                <div className="grid grid-cols-2 gap-4 text-sm font-bold font-bold font-bold font-bold font-bold">
-                                    <div className="space-y-1 font-bold font-bold font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest font-bold font-bold font-bold font-bold font-bold">Reg Unit</label><input name="reg" required placeholder="PK-404" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 uppercase font-bold font-bold font-bold font-bold font-bold" /></div>
-                                    <div className="space-y-1 font-bold font-bold font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest font-bold font-bold font-bold font-bold font-bold">Model Pesawat</label><input name="type" required placeholder="B77W" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 font-bold font-bold font-bold font-bold font-bold" /></div>
-                                    <div className="space-y-1 text-center font-bold font-bold font-bold font-bold font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold font-bold font-bold font-bold font-bold">Layanan</label><select name="fleetType" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold font-bold font-bold font-bold font-bold"><option value="Pax">Pax</option><option value="Cargo">Cargo</option></select></div>
-                                    <div className="space-y-1 text-center font-bold font-bold font-bold font-bold font-bold font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold font-bold font-bold font-bold font-bold font-bold">Tipe Ukuran</label><select name="cat" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold font-bold font-bold font-bold font-bold font-bold">{['A', 'B', 'C', 'D', 'E', 'F'].map(c => <option key={c} value={c} className="font-bold font-bold font-bold font-bold font-bold font-bold">Type {c}</option>)}</select></div>
-                                    <div className="space-y-1 text-center font-bold font-bold font-bold font-bold font-bold font-bold font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold">Hub Basis</label><select name="hub" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold font-bold font-bold font-bold font-bold font-bold font-bold">{HUB_DATA.map(h => <option key={h.id} value={h.id} className="font-bold font-bold font-bold font-bold font-bold font-bold font-bold">{h.id}</option>)}</select></div>
-                                    <div className="space-y-1 text-center font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold">Range (NM)</label><input name="range" type="number" required placeholder="7000" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 font-bold font-bold font-bold font-bold font-bold font-bold font-bold" /></div>
-                                    <div className="col-span-2 space-y-1 font-bold text-center font-bold font-bold font-bold font-bold font-bold font-bold font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold">Manufaktur</label><select name="manufacturer" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold font-bold font-bold font-bold font-bold font-bold font-bold"><option value="Airbus">Airbus</option><option value="Boeing">Boeing</option><option value="ATR">ATR</option><option value="Embraer">Embraer</option><option value="Other">Lainnya</option></select></div>
-                                    <div className="col-span-2 space-y-1 font-bold text-center font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold">Status Unit</label><select name="status" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold font-bold"><option value="Kerja">Kerja</option><option value="Nganggur">Nganggur</option></select></div>
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto">
+                            <form onSubmit={handleAddPlane} className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-lg p-10 animate-fade my-auto relative">
+                                <button type="button" onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-500"><Icon name="x" size={24} /></button>
+                                <h3 className="text-2xl font-bold mb-8 text-center uppercase tracking-tight">Registrasi Unit 〆404</h3>
+                                <div className="grid grid-cols-2 gap-4 text-sm font-bold">
+                                    <div className="space-y-1"><label className="text-[10px] text-slate-400 uppercase tracking-widest">Reg Unit</label><input name="reg" required placeholder="PK-404" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 uppercase font-bold" /></div>
+                                    <div className="space-y-1"><label className="text-[10px] text-slate-400 uppercase tracking-widest">Model Pesawat</label><input name="type" required placeholder="B77W" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" /></div>
+                                    <div className="space-y-1 text-center"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold">Layanan</label><select name="fleetType" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold font-bold"><option value="Pax">Pax</option><option value="Cargo">Cargo</option></select></div>
+                                    <div className="space-y-1 text-center"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold">Size</label><select name="cat" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold">{['A', 'B', 'C', 'D', 'E', 'F'].map(c => <option key={c} value={c}>Type {c}</option>)}</select></div>
+                                    <div className="space-y-1 text-center"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold">Hub Basis</label><select name="hub" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold">{HUB_DATA.map(h => <option key={h.id} value={h.id}>{h.id}</option>)}</select></div>
+                                    <div className="space-y-1 text-center"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold">Range (NM)</label><input name="range" type="number" required placeholder="7000" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" /></div>
+                                    <div className="col-span-2 space-y-1 text-center"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold font-bold">Manufaktur</label><select name="manufacturer" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold"><option value="Airbus">Airbus</option><option value="Boeing">Boeing</option><option value="ATR">ATR</option><option value="Embraer">Embraer</option><option value="Other">Lainnya</option></select></div>
+                                    <div className="col-span-2 space-y-1 text-center"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold font-bold">Status Unit</label><select name="status" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold font-bold"><option value="Kerja">Kerja</option><option value="Nganggur">Nganggur</option></select></div>
                                 </div>
                                 <button type="submit" className="w-full bg-sky-600 text-white py-5 rounded-2xl font-bold shadow-xl mt-8 uppercase tracking-widest text-sm active:scale-95 transition-all font-bold font-bold">Simpan Unit</button>
                             </form>
@@ -430,13 +420,13 @@
                     )}
 
                     {isDeleteModalOpen && (
-                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/20 font-bold font-bold font-bold font-bold font-bold font-bold">
-                                <h3 className="text-xl font-bold mb-4 uppercase tracking-tight font-bold font-bold font-bold font-bold font-bold font-bold font-bold">Konfirmasi Hapus</h3>
-                                <p className="text-sm text-slate-500 mb-8 font-bold font-bold font-bold font-bold font-bold font-bold">Hapus unit ini secara permanen?</p>
-                                <div className="flex flex-col gap-3 font-bold font-bold font-bold font-bold font-bold font-bold">
-                                    <button onClick={confirmDelete} className="w-full bg-red-500 text-white py-4 rounded-xl font-bold uppercase text-xs active:scale-95 transition-all font-bold font-bold font-bold font-bold font-bold">Hapus Sekarang</button>
-                                    <button onClick={() => setIsDeleteModalOpen(false)} className="w-full bg-slate-100 text-slate-500 py-4 rounded-xl font-bold uppercase text-xs font-bold font-bold font-bold font-bold font-bold">Batalkan</button>
+                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4 text-center">
+                            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/20 font-bold font-bold">
+                                <h3 className="text-xl font-bold mb-4 uppercase tracking-tight">Konfirmasi Hapus</h3>
+                                <p className="text-sm text-slate-500 mb-8 font-bold">Hapus unit ini secara permanen?</p>
+                                <div className="flex flex-col gap-3 font-bold font-bold">
+                                    <button onClick={confirmDelete} className="w-full bg-red-500 text-white py-4 rounded-xl font-bold uppercase text-xs active:scale-95 transition-all">Hapus Sekarang</button>
+                                    <button onClick={() => setIsDeleteModalOpen(false)} className="w-full bg-slate-100 text-slate-500 py-4 rounded-xl font-bold uppercase text-xs font-bold font-bold">Batalkan</button>
                                 </div>
                             </div>
                         </div>
@@ -446,8 +436,8 @@
         }
 
         const NavTab = ({ active, onClick, icon, label }) => (
-            <button onClick={onClick} className={`relative flex items-center gap-2 px-4 sm:px-7 py-3.5 rounded-2xl font-bold text-[10px] sm:text-[11px] tracking-widest transition-all cursor-pointer font-bold font-bold ${active ? 'bg-sky-600 text-white shadow-lg shadow-sky-200' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}>
-                <Icon name={icon} size={18} /> <span className="hidden md:inline uppercase ml-1 font-bold font-bold">{label}</span>
+            <button onClick={onClick} className={`relative flex items-center gap-2 px-4 sm:px-7 py-3.5 rounded-2xl font-bold text-[10px] sm:text-[11px] tracking-widest transition-all cursor-pointer font-bold ${active ? 'bg-sky-600 text-white shadow-lg shadow-sky-200 font-bold' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700 font-bold font-bold'}`}>
+                <Icon name={icon} size={18} /> <span className="hidden md:inline uppercase ml-1 font-bold font-bold font-bold font-bold">{label}</span>
             </button>
         );
 
@@ -457,9 +447,9 @@
 
         const StatCard = ({ label, value, icon, color, bg }) => (
             <div className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all hover:shadow-md hover:-translate-y-1 text-center font-bold font-bold font-bold">
-                <div className={`w-14 h-14 ${bg} ${color} rounded-[1.4rem] flex items-center justify-center mb-6 shadow-sm shadow-black/5 mx-auto font-bold font-bold font-bold font-bold`}>{icon}</div>
-                <div className="text-3xl font-bold text-slate-900 tracking-tighter text-center font-bold font-bold font-bold font-bold">{value}</div>
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center font-bold font-bold font-bold font-bold font-bold">{label}</div>
+                <div className={`w-14 h-14 ${bg} ${color} rounded-[1.4rem] flex items-center justify-center mb-6 shadow-sm shadow-black/5 mx-auto font-bold font-bold font-bold font-bold font-bold`}>{icon}</div>
+                <div className="text-3xl font-bold text-slate-900 tracking-tighter text-center font-bold font-bold font-bold font-bold font-bold">{value}</div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center font-bold font-bold font-bold font-bold font-bold font-bold">{label}</div>
             </div>
         );
 
