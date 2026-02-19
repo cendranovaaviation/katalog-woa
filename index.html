@@ -80,7 +80,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // ID Aplikasi tetap (Gunakan ID yang konsisten agar path Firestore valid - Rule 1)
+        // ID Aplikasi tetap
         const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : "isl-404-notfound-hub"; 
         const ADMIN_CODE = "123456"; 
         
@@ -114,17 +114,14 @@
             const [fleet, setFleet] = useState([]);
             const [activeTab, setActiveTab] = useState('katalog'); 
             const [isCEO, setIsCEO] = useState(false); 
-            const [loading, setLoading] = useState(true);
-            const [authStatus, setAuthStatus] = useState("Menghubungkan...");
-            const [loadTimeout, setLoadTimeout] = useState(false);
-            const [permError, setPermError] = useState(false);
+            const [isDataSyncing, setIsDataSyncing] = useState(true);
 
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
             const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
             const [planeToDelete, setPlaneToDelete] = useState(null);
 
-            const [toast, setToast] = useState({ message: "", visible: false });
+            const [toast, setToast] = useState({ message: "", visible: false, type: "info" });
             const [loginError, setLoginError] = useState("");
             const [attempts, setAttempts] = useState(0);
             const [cooldownTime, setCooldownTime] = useState(0);
@@ -134,16 +131,10 @@
             const [filterSize, setFilterSize] = useState('All');
             const [filterHub, setFilterHub] = useState('All');
 
-            const showToast = (message) => {
-                setToast({ message, visible: true });
-                setTimeout(() => setToast({ message: "", visible: false }), 4000);
+            const showToast = (message, type = "info") => {
+                setToast({ message, visible: true, type });
+                setTimeout(() => setToast({ message: "", visible: false, type: "info" }), 5000);
             };
-
-            // Diagnostic Radar Timer
-            useEffect(() => {
-                const timer = setTimeout(() => { if (loading) setLoadTimeout(true); }, 15000);
-                return () => clearTimeout(timer);
-            }, [loading]);
 
             useEffect(() => {
                 let timer;
@@ -151,11 +142,10 @@
                 return () => clearInterval(timer);
             }, [cooldownTime]);
 
-            // TAHAP 1: Autentikasi HARUS selesai sebelum melakukan kueri (Wajib Rule 3)
+            // TAHAP 1: Autentikasi Latar Belakang
             useEffect(() => {
                 const initAuth = async () => {
                     try {
-                        setAuthStatus("Mengautentikasi...");
                         if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
                             await signInWithCustomToken(auth, window.__initial_auth_token);
                         } else {
@@ -163,36 +153,33 @@
                         }
                     } catch (e) { 
                         console.error("Auth Error:", e);
-                        setAuthStatus("Gagal Login");
+                        showToast("Gagal menghubungkan radar secara otomatis.", "error");
                     }
                 };
                 initAuth();
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
                     if (u) {
                         setUser(u);
-                        setAuthStatus("Siap");
-                    } else {
-                        setUser(null);
                     }
                 });
                 return () => unsubscribe();
             }, []);
 
-            // TAHAP 2: Ambil Data hanya jika status user sudah ada (Wajib Rule 3)
+            // TAHAP 2: Ambil Data Real-time
             useEffect(() => {
                 if (!user) return;
                 
-                // Gunakan path koleksi sesuai aturan (Rule 1)
                 const fleetCol = collection(db, 'artifacts', appId, 'public', 'data', 'fleet');
                 
                 const unsubFleet = onSnapshot(fleetCol, (snap) => {
                     setFleet(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                    setLoading(false);
-                    setPermError(false);
+                    setIsDataSyncing(false);
                 }, (err) => { 
                     console.error("Firestore error:", err); 
-                    if (err.code === 'permission-denied') setPermError(true);
-                    setLoading(false); 
+                    if (err.code === 'permission-denied') {
+                        showToast("Izin ditolak. Pastikan domain terdaftar di Firebase.", "error");
+                    }
+                    setIsDataSyncing(false);
                 });
                 
                 return () => unsubFleet();
@@ -225,7 +212,7 @@
             const handleAddPlane = async (e) => {
                 e.preventDefault();
                 const fd = new FormData(e.target);
-                if (!user) return;
+                if (!user) return showToast("Sistem belum siap. Tunggu sebentar.", "error");
                 try {
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'fleet'), {
                         reg: fd.get('reg'), type: fd.get('type'), manufacturer: fd.get('manufacturer'),
@@ -235,7 +222,7 @@
                     });
                     setIsModalOpen(false);
                     showToast("Unit armada berhasil didaftarkan!");
-                } catch (err) { showToast("Gagal menyimpan data."); }
+                } catch (err) { showToast("Gagal menyimpan data ke Cloud."); }
             };
 
             const handleToggleStatus = async (planeId, currentStatus) => {
@@ -261,7 +248,7 @@
                 if (cooldownTime > 0) return;
                 if (e.target.code.value === ADMIN_CODE) {
                     setIsCEO(true); setIsLoginModalOpen(false); setActiveTab('dashboard'); setLoginError(""); setAttempts(0);
-                    showToast("Akses CEO Diterima!");
+                    showToast("Selamat datang, CEO!", "success");
                 } else { 
                     const next = attempts + 1;
                     if (next >= 3) { setLoginError("Akses ditolak!"); setCooldownTime(60); setAttempts(0); }
@@ -278,29 +265,6 @@
                 return ms && mf && mh;
             }), [fleet, searchQuery, filterSize, filterHub]);
 
-            if (loading) return (
-                <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
-                    <div className="w-12 h-12 border-4 border-sky-600 border-t-transparent rounded-full animate-spin mb-6"></div>
-                    <p className="font-bold text-slate-500 uppercase tracking-widest text-xs mb-2">Mempersiapkan Radar 404...</p>
-                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">{authStatus}</p>
-                    
-                    {(loadTimeout || permError) && (
-                        <div className="mt-8 max-w-sm p-6 bg-white rounded-2xl shadow-xl border border-red-200 animate-fade text-center items-center flex flex-col">
-                            <p className="text-red-600 text-xs font-bold uppercase mb-3 flex items-center justify-center gap-2"><Icon name="alert-triangle" size={14} /> Kendala Koneksi</p>
-                            <p className="text-[11px] text-slate-500 leading-relaxed mb-4">
-                                {permError 
-                                    ? "Firestore menolak akses (Missing Permissions). Pastikan domain 'cendranovaaviation.github.io' sudah terdaftar di tab 'Authorized Domains' di Firebase Console." 
-                                    : "Koneksi lambat. Pastikan 'Anonymous Sign-in' tetap dalam kondisi ENABLED."}
-                            </p>
-                            <div className="flex flex-col gap-2 w-full">
-                                <button onClick={() => window.location.reload()} className="w-full py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all">Refresh Halaman</button>
-                                <button onClick={() => { setLoading(false); setActiveTab('katalog'); }} className="w-full py-2 bg-sky-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all">Masuk ke Antarmuka</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-
             return (
                 <div className="min-h-screen flex flex-col text-slate-800 selection:bg-sky-200">
                     <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-4 h-20 shadow-sm">
@@ -312,7 +276,7 @@
                                     <span className="text-[9px] font-bold text-sky-600 tracking-[0.1em] uppercase">Member of Infinite Sky Legion</span>
                                 </div>
                             </div>
-                            <div className="flex gap-1.5 sm:gap-3 items-center">
+                            <div className="flex gap-2 items-center">
                                 {isCEO && <NavTab active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon="layout-dashboard" label="Stats" />}
                                 <NavTab active={activeTab === 'katalog'} onClick={() => setActiveTab('katalog')} icon="list" label="Armada" />
                                 <a href={ISL_FORM_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 sm:px-5 py-3 rounded-2xl font-bold text-[10px] tracking-widest bg-amber-500 text-white shadow-lg shadow-amber-100 hover:scale-105 active:scale-95 transition-all">
@@ -373,101 +337,110 @@
                                     <input type="text" placeholder="Cari armada (Reg/Model)..." className="w-full bg-white border border-slate-200 rounded-[1.5rem] py-5 pl-14 pr-6 focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 outline-none transition-all shadow-sm font-medium" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {filteredFleet.map(p => (
-                                        <div key={p.id} className="bg-white rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group card-hover">
-                                            <div className="p-8 flex-grow">
-                                                <div className="flex justify-between items-start mb-6">
-                                                    <div>
-                                                        <span className="font-mono font-bold text-2xl text-slate-900 block tracking-tighter uppercase">{p.reg}</span>
-                                                        <div className="flex items-center gap-2 mt-1 font-bold">
-                                                            <p className="text-[10px] text-slate-400 uppercase tracking-widest">{p.manufacturer}</p>
-                                                            <span className={`px-2 py-0.5 rounded text-[8px] uppercase tracking-widest ${p.fleetType === 'Cargo' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{p.fleetType}</span>
+                                {isDataSyncing ? (
+                                    <div className="py-20 text-center text-slate-400 animate-pulse">Sinkronisasi data radar...</div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {filteredFleet.map(p => (
+                                            <div key={p.id} className="bg-white rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col group card-hover">
+                                                <div className="p-8 flex-grow">
+                                                    <div className="flex justify-between items-start mb-6">
+                                                        <div>
+                                                            <span className="font-mono font-bold text-2xl text-slate-900 block tracking-tighter uppercase">{p.reg}</span>
+                                                            <div className="flex items-center gap-2 mt-1 font-bold">
+                                                                <p className="text-[10px] text-slate-400 uppercase tracking-widest">{p.manufacturer}</p>
+                                                                <span className={`px-2 py-0.5 rounded text-[8px] uppercase tracking-widest ${p.fleetType === 'Cargo' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{p.fleetType}</span>
+                                                            </div>
                                                         </div>
+                                                        <span className="text-[9px] font-bold px-3 py-1.5 rounded-xl uppercase tracking-tighter shadow-sm bg-slate-100 text-slate-600 border border-slate-200">Type {p.cat}</span>
                                                     </div>
-                                                    <span className="text-[9px] font-bold px-3 py-1.5 rounded-xl uppercase tracking-tighter shadow-sm bg-slate-100 text-slate-600 border border-slate-200">Type {p.cat}</span>
+                                                    <h4 className="font-bold text-slate-800 text-lg mb-1">{p.type}</h4>
+                                                    <div className="mt-4 grid grid-cols-2 gap-3 text-center font-bold">
+                                                        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-1 items-center">
+                                                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Hub Basis</span>
+                                                            <div className="flex items-center justify-center gap-1.5">
+                                                                <span className="text-xs">{HUB_DATA.find(h => h.id === p.hub)?.flag || '📍'}</span>
+                                                                <span className="text-xs text-slate-700 uppercase">{p.hub}</span>
+                                                            </div>
+                                                        </div>
+                                                        <button onClick={() => handleToggleStatus(p.id, p.status)} disabled={!isCEO} className={`p-3 rounded-2xl border border-slate-100 flex flex-col gap-1 transition-all items-center ${isCEO ? 'hover:bg-slate-100 cursor-pointer active:scale-95' : 'bg-slate-50 cursor-default'}`}>
+                                                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Status Op</span>
+                                                            <div className="flex items-center justify-center gap-1.5 text-[10px] uppercase font-bold">
+                                                                <div className={`w-2.5 h-2.5 rounded-full ${p.status === 'Kerja' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                                                                {p.status}
+                                                            </div>
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <h4 className="font-bold text-slate-800 text-lg mb-1">{p.type}</h4>
-                                                <div className="mt-4 grid grid-cols-2 gap-3 text-center font-bold">
-                                                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-1 items-center">
-                                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Hub Basis</span>
-                                                        <div className="flex items-center justify-center gap-1.5">
-                                                            <span className="text-xs">{HUB_DATA.find(h => h.id === p.hub)?.flag || '📍'}</span>
-                                                            <span className="text-xs text-slate-700 uppercase">{p.hub}</span>
-                                                        </div>
+                                                <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-between items-center px-8">
+                                                    <div className="flex items-center gap-2">
+                                                        <Icon name="navigation-2" size={12} className="text-slate-400" />
+                                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Range: {(p.range || 0).toLocaleString()} NM</span>
                                                     </div>
-                                                    <button onClick={() => handleToggleStatus(p.id, p.status)} disabled={!isCEO} className={`p-3 rounded-2xl border border-slate-100 flex flex-col gap-1 transition-all items-center ${isCEO ? 'hover:bg-slate-100 cursor-pointer active:scale-95' : 'bg-slate-50 cursor-default'}`}>
-                                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Status Op</span>
-                                                        <div className="flex items-center justify-center gap-1.5 text-[10px] uppercase font-bold">
-                                                            <div className={`w-2.5 h-2.5 rounded-full ${p.status === 'Kerja' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
-                                                            {p.status}
-                                                        </div>
-                                                    </button>
+                                                    {isCEO && <button onClick={() => { setPlaneToDelete(p.id); setIsDeleteModalOpen(true); }} className="text-slate-300 hover:text-red-500 p-2 transition-colors cursor-pointer"><Icon name="trash-2" size={20} /></button>}
                                                 </div>
                                             </div>
-                                            <div className="p-5 bg-slate-50 border-t border-slate-100 flex justify-between items-center px-8">
-                                                <div className="flex items-center gap-2">
-                                                    <Icon name="navigation-2" size={12} className="text-slate-400" />
-                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Range: {(p.range || 0).toLocaleString()} NM</span>
-                                                </div>
-                                                {isCEO && <button onClick={() => { setPlaneToDelete(p.id); setIsDeleteModalOpen(true); }} className="text-slate-300 hover:text-red-500 p-2 transition-colors cursor-pointer"><Icon name="trash-2" size={20} /></button>}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </main>
 
                     <footer className="py-14 text-center border-t border-slate-100 mt-auto bg-white/50">
-                        {!isCEO ? <button onClick={() => setIsLoginModalOpen(true)} className="text-slate-300 hover:text-sky-400 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center justify-center gap-3 mx-auto cursor-pointer"><Icon name="lock" size={12}/> CEO 404 Access</button> : <button onClick={() => setIsCEO(false)} className="text-red-300 hover:text-red-500 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center gap-3 mx-auto cursor-pointer font-bold"><Icon name="log-out" size={12}/> Keluar</button>}
-                        <p className="text-[9px] text-slate-300 font-bold uppercase tracking-[0.6em] mt-8">404 NotFound &copy; 2026 • Infinite Sky Legion Member</p>
+                        {!isCEO ? <button onClick={() => setIsLoginModalOpen(true)} className="text-slate-300 hover:text-sky-400 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center justify-center gap-3 mx-auto cursor-pointer font-bold"><Icon name="lock" size={12}/> CEO 404 Access</button> : <button onClick={() => setIsCEO(false)} className="text-red-300 hover:text-red-500 text-[10px] font-bold uppercase tracking-[0.4em] flex items-center gap-3 mx-auto cursor-pointer font-bold font-bold"><Icon name="log-out" size={12}/> Keluar</button>}
+                        <p className="text-[9px] text-slate-300 font-bold uppercase tracking-[0.6em] mt-8 font-bold">404 NotFound &copy; 2026 • Infinite Sky Legion Member</p>
                     </footer>
 
-                    {toast.visible && <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 font-bold text-sm bg-slate-900 text-white animate-fade"><Icon name="check-circle" size={18} />{toast.message}</div>}
+                    {toast.visible && (
+                        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 font-bold text-sm text-white animate-fade ${toast.type === 'error' ? 'bg-red-600' : 'bg-slate-900'}`}>
+                            <Icon name={toast.type === 'error' ? 'alert-circle' : 'check-circle'} size={18} />
+                            {toast.message}
+                        </div>
+                    )}
 
                     {isLoginModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
                             <form onSubmit={handleLogin} className={`bg-white rounded-[3rem] p-12 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/50 ${isShaking ? 'shake' : ''}`}>
-                                <h3 className="text-xl font-bold text-slate-800 mb-4 uppercase">Otentikasi CEO</h3>
-                                <div className="relative mb-8">
+                                <h3 className="text-xl font-bold text-slate-800 mb-2 uppercase font-bold">Otentikasi CEO</h3>
+                                <div className="relative mb-8 text-center items-center font-bold">
                                     <input name="code" type="password" placeholder="••••••" maxLength="6" disabled={cooldownTime > 0} className="w-full bg-slate-50 p-6 rounded-[1.5rem] text-center text-3xl font-bold tracking-[0.6em] outline-none focus:ring-2 focus:ring-sky-500 shadow-inner" required autoFocus />
-                                    {loginError && <p className="text-red-500 text-[10px] font-bold uppercase mt-3 tracking-widest">{loginError}</p>}
+                                    {loginError && <p className="text-red-500 text-[10px] font-bold uppercase mt-3 tracking-widest font-bold">{loginError}</p>}
                                 </div>
-                                <button type="submit" disabled={cooldownTime > 0} className="w-full py-5 rounded-[1.3rem] font-bold shadow-xl transition-all active:scale-95 uppercase tracking-[0.2em] text-xs bg-sky-600 text-white">{cooldownTime > 0 ? `Terkunci (${cooldownTime}s)` : 'Akses Sistem'}</button>
-                                <button type="button" onClick={() => setIsLoginModalOpen(false)} className="w-full mt-4 text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-slate-600 transition-colors">Batalkan</button>
+                                <button type="submit" disabled={cooldownTime > 0} className="w-full py-5 rounded-[1.3rem] font-bold shadow-xl transition-all active:scale-95 uppercase tracking-[0.2em] text-xs bg-sky-600 text-white font-bold">{cooldownTime > 0 ? `Terkunci (${cooldownTime}s)` : 'Akses Sistem'}</button>
+                                <button type="button" onClick={() => setIsLoginModalOpen(false)} className="w-full mt-4 text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-slate-600 transition-colors font-bold">Batalkan</button>
                             </form>
                         </div>
                     )}
 
                     {isModalOpen && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto">
-                            <form onSubmit={handleAddPlane} className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-lg p-10 animate-fade my-auto relative">
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto font-bold">
+                            <form onSubmit={handleAddPlane} className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-lg p-10 animate-fade my-auto relative font-bold font-bold">
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 text-slate-300 hover:text-slate-500"><Icon name="x" size={24} /></button>
-                                <h3 className="text-2xl font-bold mb-8 text-center uppercase tracking-tight">Registrasi Unit 〆404</h3>
-                                <div className="grid grid-cols-2 gap-4 text-sm font-bold">
-                                    <div className="space-y-1 font-bold"><label className="text-[10px] text-slate-400 uppercase">Reg Unit</label><input name="reg" required placeholder="PK-404" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 uppercase" /></div>
-                                    <div className="space-y-1 font-bold"><label className="text-[10px] text-slate-400 uppercase">Model Pesawat</label><input name="type" required placeholder="B77W / A359" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500" /></div>
-                                    <div className="space-y-1 font-bold"><label className="text-[10px] text-slate-400 uppercase">Layanan</label><select name="fleetType" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer"><option value="Pax">Pax</option><option value="Cargo">Cargo</option></select></div>
-                                    <div className="space-y-1 font-bold"><label className="text-[10px] text-slate-400 uppercase">Size</label><select name="cat" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer">{['S', 'M', 'L', 'XL', 'A', 'B', 'C', 'D', 'E', 'F'].map(c => <option key={c} value={c}>Type {c}</option>)}</select></div>
-                                    <div className="space-y-1 font-bold"><label className="text-[10px] text-slate-400 uppercase">Hub Basis</label><select name="hub" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer">{HUB_DATA.map(h => <option key={h.id} value={h.id}>{h.id}</option>)}</select></div>
-                                    <div className="space-y-1 font-bold"><label className="text-[10px] text-slate-400 uppercase">Range (NM)</label><input name="range" type="number" required placeholder="7000" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500" /></div>
-                                    <div className="col-span-2 space-y-1 font-bold"><label className="text-[10px] text-slate-400 uppercase">Manufaktur</label><select name="manufacturer" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer"><option value="Airbus">Airbus</option><option value="Boeing">Boeing</option><option value="Other">Lainnya</option></select></div>
-                                    <div className="col-span-2 space-y-1 font-bold"><label className="text-[10px] text-slate-400 uppercase">Status</label><select name="status" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold"><option value="Kerja">Kerja</option><option value="Nganggur">Nganggur</option></select></div>
+                                <h3 className="text-2xl font-bold mb-8 text-center uppercase tracking-tight font-bold">Registrasi Unit 〆404</h3>
+                                <div className="grid grid-cols-2 gap-4 text-sm font-bold font-bold">
+                                    <div className="space-y-1 font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest font-bold font-bold">Reg Unit</label><input name="reg" required placeholder="PK-404" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 uppercase font-bold" /></div>
+                                    <div className="space-y-1 font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest font-bold font-bold">Model Pesawat</label><input name="type" required placeholder="B77W / A359" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" /></div>
+                                    <div className="space-y-1 font-bold text-center font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold font-bold">Layanan</label><select name="fleetType" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold"><option value="Pax">Pax</option><option value="Cargo">Cargo</option></select></div>
+                                    <div className="space-y-1 font-bold text-center font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest block font-bold font-bold font-bold">Tipe Ukuran</label><select name="cat" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold">{['A', 'B', 'C', 'D', 'E', 'F'].map(c => <option key={c} value={c}>Type {c}</option>)}</select></div>
+                                    <div className="space-y-1 font-bold text-center font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest text-center block font-bold font-bold font-bold">Hub Basis</label><select name="hub" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold">{HUB_DATA.map(h => <option key={h.id} value={h.id}>{h.id} Hub</option>)}</select></div>
+                                    <div className="space-y-1 font-bold text-center font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest text-center block font-bold font-bold font-bold">Range (NM)</label><input name="range" type="number" required placeholder="7000" className="w-full bg-slate-50 p-4 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 font-bold" /></div>
+                                    <div className="col-span-2 space-y-1 font-bold text-center font-bold font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest text-center block font-bold font-bold font-bold">Manufaktur</label><select name="manufacturer" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold"><option value="Airbus">Airbus</option><option value="Boeing">Boeing</option><option value="Other">Lainnya</option></select></div>
+                                    <div className="col-span-2 space-y-1 font-bold text-center font-bold font-bold font-bold"><label className="text-[10px] text-slate-400 uppercase tracking-widest text-center block font-bold font-bold font-bold font-bold">Status Unit</label><select name="status" className="w-full bg-slate-50 p-4 rounded-xl outline-none cursor-pointer font-bold font-bold font-bold"><option value="Kerja">Kerja</option><option value="Nganggur">Nganggur</option></select></div>
                                 </div>
-                                <button type="submit" className="w-full bg-sky-600 text-white py-5 rounded-2xl font-black shadow-xl mt-8 uppercase tracking-widest text-sm transition-all active:scale-95">Simpan Unit</button>
+                                <button type="submit" className="w-full bg-sky-600 text-white py-5 rounded-2xl font-bold shadow-xl mt-8 uppercase tracking-widest text-sm active:scale-95 transition-all font-bold">Simpan Unit</button>
                             </form>
                         </div>
                     )}
 
                     {isDeleteModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/20">
-                                <h3 className="text-xl font-bold mb-4 uppercase">Hapus Pesawat</h3>
-                                <p className="text-sm text-slate-500 mb-8 font-bold">Hapus unit ini selamanya?</p>
-                                <div className="flex flex-col gap-3 font-bold">
-                                    <button onClick={confirmDelete} className="w-full bg-red-500 text-white py-4 rounded-xl font-bold uppercase text-xs transition-all active:scale-95">Hapus Sekarang</button>
-                                    <button onClick={() => setIsDeleteModalOpen(false)} className="w-full bg-slate-100 text-slate-500 py-4 rounded-xl font-bold uppercase text-xs">Batalkan</button>
+                            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl animate-fade text-center border border-white/20 font-bold font-bold font-bold">
+                                <h3 className="text-xl font-bold mb-4 uppercase font-bold tracking-tight">Konfirmasi Hapus</h3>
+                                <p className="text-sm text-slate-500 mb-8 font-bold font-bold">Hapus unit ini secara permanen?</p>
+                                <div className="flex flex-col gap-3 font-bold font-bold">
+                                    <button onClick={confirmDelete} className="w-full bg-red-500 text-white py-4 rounded-xl font-bold uppercase text-xs active:scale-95 transition-all font-bold font-bold">Hapus Sekarang</button>
+                                    <button onClick={() => setIsDeleteModalOpen(false)} className="w-full bg-slate-100 text-slate-500 py-4 rounded-xl font-bold uppercase text-xs font-bold font-bold">Batalkan</button>
                                 </div>
                             </div>
                         </div>
@@ -477,20 +450,20 @@
         }
 
         const NavTab = ({ active, onClick, icon, label }) => (
-            <button onClick={onClick} className={`relative flex items-center gap-2 px-4 sm:px-7 py-3.5 rounded-2xl font-bold text-[10px] sm:text-[11px] tracking-widest transition-all cursor-pointer ${active ? 'bg-sky-600 text-white shadow-lg shadow-sky-200' : 'text-slate-400 hover:bg-slate-100'}`}>
-                <Icon name={icon} size={18} /> <span className="hidden md:inline uppercase ml-1 font-bold">{label}</span>
+            <button onClick={onClick} className={`relative flex items-center gap-2 px-4 sm:px-7 py-3.5 rounded-2xl font-bold text-[10px] sm:text-[11px] tracking-widest transition-all cursor-pointer font-bold ${active ? 'bg-sky-600 text-white shadow-lg shadow-sky-200' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}>
+                <Icon name={icon} size={18} /> <span className="hidden md:inline uppercase ml-1 font-bold font-bold">{label}</span>
             </button>
         );
 
         const FilterBtn = ({ active, onClick, label }) => (
-            <button onClick={onClick} className={`px-4 py-1.5 rounded-lg text-[9px] font-bold tracking-widest transition-all cursor-pointer ${active ? 'bg-sky-600 text-white shadow-sm font-bold' : 'bg-white text-slate-400 border border-slate-200'}`}>{label}</button>
+            <button onClick={onClick} className={`px-4 py-1.5 rounded-lg text-[9px] font-bold tracking-widest transition-all cursor-pointer font-bold ${active ? 'bg-sky-600 text-white shadow-sm font-bold' : 'bg-white text-slate-400 border border-slate-200 hover:border-sky-300 font-bold font-bold'}`}>{label}</button>
         );
 
         const StatCard = ({ label, value, icon, color, bg }) => (
-            <div className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all hover:shadow-md hover:-translate-y-1 text-center font-bold">
+            <div className="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all hover:shadow-md hover:-translate-y-1 text-center font-bold font-bold font-bold">
                 <div className={`w-14 h-14 ${bg} ${color} rounded-[1.4rem] flex items-center justify-center mb-6 shadow-sm shadow-black/5 mx-auto font-bold`}>{icon}</div>
-                <div className="text-3xl font-bold text-slate-900 tracking-tighter text-center font-bold">{value}</div>
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center font-bold">{label}</div>
+                <div className="text-3xl font-bold text-slate-900 tracking-tighter text-center font-bold font-bold">{value}</div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center font-bold font-bold font-bold font-bold">{label}</div>
             </div>
         );
 
